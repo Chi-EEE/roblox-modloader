@@ -11,22 +11,23 @@ RML_LOG_SCOPE("Graphics");
 
 namespace rml::graphics
 {
-	std::vector<char> make_shader_blob(const std::string_view payload, const std::uint64_t buffer_mask, const std::uint32_t reserved)
+	std::vector<char> make_shader_blob(const std::string_view payload, const std::uint64_t resource_masks, const std::uint32_t reserved)
 	{
-		std::vector<char> blob(sizeof(buffer_mask) + sizeof(reserved) + payload.size());
-		std::memcpy(blob.data(), &buffer_mask, sizeof(buffer_mask));
-		std::memcpy(blob.data() + sizeof(buffer_mask), &reserved, sizeof(reserved));
-		std::memcpy(blob.data() + sizeof(buffer_mask) + sizeof(reserved), payload.data(), payload.size());
+		std::vector<char> blob(sizeof(resource_masks) + sizeof(reserved) + payload.size());
+		std::memcpy(blob.data(), &resource_masks, sizeof(resource_masks));
+		std::memcpy(blob.data() + sizeof(resource_masks), &reserved, sizeof(reserved));
+		std::memcpy(blob.data() + sizeof(resource_masks) + sizeof(reserved), payload.data(), payload.size());
 		return blob;
 	}
 
 	static std::expected<std::shared_ptr<RBX::Graphics::Shader>, std::string> create_shader(RBX::Graphics::Device& device, const ShaderSource& source, const RBX::Graphics::Shader::Type stage, const std::string_view language, const std::string& name)
 	{
-		const auto payload = platform::compile_shader(source, stage, language);
-		if (!payload)
-			return std::unexpected(std::format("{}: {}", name, payload.error()));
+		const auto compiled = platform::compile_shader(source, stage, language);
+		if (!compiled)
+			return std::unexpected(std::format("{}: {}", name, compiled.error()));
 
-		auto shader = device.create_shader(stage, make_shader_blob({payload->data(), payload->size()}), name);
+		const auto masks = static_cast<std::uint64_t>(compiled->texture_mask) << 32 | compiled->buffer_mask;
+		auto shader = device.create_shader(stage, make_shader_blob({compiled->payload.data(), compiled->payload.size()}, masks), name);
 		if (!shader)
 			return std::unexpected(std::format("{}: the device rejected the shader", name));
 		return shader;
