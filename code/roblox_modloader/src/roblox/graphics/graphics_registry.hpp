@@ -11,6 +11,7 @@
 namespace rml::graphics
 {
 	void* adorn_render_pre_submit_pass_target();
+	void* device_destructor_target();
 
 	class GraphicsRegistry
 	{
@@ -27,11 +28,15 @@ namespace rml::graphics
 		void remove_render_callback(RenderCallbackId id);
 		std::size_t run_render_callbacks(RenderPassContext& context);
 		void begin_scene(RBX::Graphics::SceneManager* scene_manager, bool engine_clouds, std::uint32_t capture_mode);
+		RenderCallbackId add_device_teardown_callback(DeviceCallback callback);
+		void set_device_teardown_available(bool available);
+		void on_device_destroyed(RBX::Graphics::Device* device);
 		void set_sky_stage_available(bool available);
 		void set_sky_stage_enabled(bool enabled);
-		void set_engine_clouds_hidden(bool hidden);
+		void set_engine_clouds_replaced(bool replaced);
 		[[nodiscard]] bool sky_stage_forced() const;
-		[[nodiscard]] bool engine_clouds_visible() const;
+		[[nodiscard]] bool engine_clouds_enabled() const;
+		[[nodiscard]] bool engine_clouds_replaced() const;
 		[[nodiscard]] std::uint32_t capture_mode() const;
 		void add_adorn_callback(AdornCallback callback);
 		void run_adorn_callbacks(RBX::Graphics::AdornRender& adorn);
@@ -61,16 +66,19 @@ namespace rml::graphics
 		std::atomic<RBX::Graphics::SceneManager*> m_scene_manager{nullptr};
 		std::mutex m_callbacks_mutex;
 		std::vector<Entry> m_callbacks;
+		std::vector<std::pair<RenderCallbackId, DeviceCallback>> m_device_callbacks;
 		std::vector<std::pair<AdornCallback, unsigned>> m_adorn_callbacks;
 		std::atomic<std::uint64_t> m_frame{0};
 		std::mutex m_adorn_mutex;
 		std::vector<AdornEntry> m_adorn_renders;
 		std::atomic<int> m_validation{0};
 		std::atomic<RenderCallbackId> m_next_callback_id{1};
+		std::atomic<bool> m_device_teardown_available{false};
+		std::atomic<RBX::Graphics::Device*> m_device{nullptr};
 		std::atomic<bool> m_sky_stage_available{false};
 		std::atomic<bool> m_sky_stage_enabled{false};
-		std::atomic<bool> m_engine_clouds_hidden{false};
 		std::atomic<bool> m_engine_clouds{false};
+		std::atomic<bool> m_engine_clouds_replaced{false};
 		std::atomic<std::uint32_t> m_capture_mode{0};
 	};
 }

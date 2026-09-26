@@ -53,6 +53,7 @@ namespace rml::graphics
 
 	void GraphicsRegistry::set_visual_engine(RBX::Graphics::VisualEngine* engine)
 	{
+		m_device.store(engine ? engine->device : nullptr, std::memory_order_release);
 		if (m_visual_engine.exchange(engine, std::memory_order_acq_rel) != engine)
 			RML_INFO("VisualEngine captured at 0x{:X} (device 0x{:X})",
 			    reinterpret_cast<std::uintptr_t>(engine),
@@ -76,6 +77,53 @@ namespace rml::graphics
 	{
 		std::lock_guard lock(m_callbacks_mutex);
 		std::erase_if(m_callbacks, [id](const Entry& entry) { return entry.id == id; });
+		std::erase_if(m_device_callbacks, [id](const auto& entry) { return entry.first == id; });
+	}
+
+	RenderCallbackId GraphicsRegistry::add_device_teardown_callback(DeviceCallback callback)
+	{
+		if (!m_device_teardown_available.load(std::memory_order_acquire))
+			return 0;
+		const auto id = m_next_callback_id.fetch_add(1, std::memory_order_relaxed);
+		std::lock_guard lock(m_callbacks_mutex);
+		m_device_callbacks.emplace_back(id, std::move(callback));
+		return id;
+	}
+
+	void GraphicsRegistry::set_device_teardown_available(const bool available)
+	{
+		m_device_teardown_available.store(available, std::memory_order_release);
+		RML_INFO("Device teardown notifications {}", available ? "enabled" : "disabled");
+	}
+
+	void GraphicsRegistry::on_device_destroyed(RBX::Graphics::Device* device)
+	{
+		{
+			std::lock_guard lock(m_callbacks_mutex);
+			for (const auto& [id, callback] : m_device_callbacks)
+			{
+				try
+				{
+					callback(*device);
+				}
+				catch (const std::exception& e)
+				{
+					RML_ERROR("device teardown callback threw: {}", e.what());
+				}
+				catch (...)
+				{
+					RML_ERROR("device teardown callback threw an unknown exception");
+				}
+			}
+		}
+
+		auto* expected = device;
+		if (m_device.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel))
+		{
+			m_visual_engine.store(nullptr, std::memory_order_release);
+			m_scene_manager.store(nullptr, std::memory_order_release);
+			RML_INFO("Device 0x{:X} destroyed", reinterpret_cast<std::uintptr_t>(device));
+		}
 	}
 
 	std::size_t GraphicsRegistry::run_render_callbacks(RenderPassContext& context)
@@ -123,6 +171,7 @@ namespace rml::graphics
 	{
 		set_scene_manager(scene_manager);
 		m_engine_clouds.store(engine_clouds, std::memory_order_release);
+		m_engine_clouds_replaced.store(false, std::memory_order_release);
 		m_capture_mode.store(capture_mode, std::memory_order_release);
 	}
 
@@ -137,9 +186,9 @@ namespace rml::graphics
 			RML_INFO("Sky stage {}", enabled ? "enabled" : "disabled");
 	}
 
-	void GraphicsRegistry::set_engine_clouds_hidden(const bool hidden)
+	void GraphicsRegistry::set_engine_clouds_replaced(const bool replaced)
 	{
-		m_engine_clouds_hidden.store(hidden, std::memory_order_release);
+		m_engine_clouds_replaced.store(replaced, std::memory_order_release);
 	}
 
 	bool GraphicsRegistry::sky_stage_forced() const
@@ -147,9 +196,14 @@ namespace rml::graphics
 		return m_sky_stage_available.load(std::memory_order_acquire) && m_sky_stage_enabled.load(std::memory_order_acquire);
 	}
 
-	bool GraphicsRegistry::engine_clouds_visible() const
+	bool GraphicsRegistry::engine_clouds_enabled() const
 	{
-		return m_engine_clouds.load(std::memory_order_acquire) && !m_engine_clouds_hidden.load(std::memory_order_acquire);
+		return m_engine_clouds.load(std::memory_order_acquire);
+	}
+
+	bool GraphicsRegistry::engine_clouds_replaced() const
+	{
+		return m_engine_clouds_replaced.load(std::memory_order_acquire);
 	}
 
 	std::uint32_t GraphicsRegistry::capture_mode() const
@@ -241,6 +295,31 @@ namespace rml::graphics
 	{
 		const auto renders = adorn_renders();
 		return renders.empty() ? nullptr : renders.front();
+	}
+
+	void* device_destructor_target()
+	{
+		auto* const index = memory::rtti();
+		if (!index)
+			return nullptr;
+
+		const memory::module image(platform::studio_image_name());
+		for (const auto* name : {"RBX::Graphics::DeviceD3D11", "RBX::Graphics::DeviceMetal"})
+		{
+			const auto vtable = index->find(name);
+			if (!vtable)
+				continue;
+
+			auto* target = (*vtable)[0];
+			const auto function = image.contains(memory::handle(target)) ? memory::function_containing(target) : std::nullopt;
+			if (!function || function->start != target || function->size < k_min_detour_target_size)
+			{
+				RML_ERROR("{} destructor is not detourable", name);
+				return nullptr;
+			}
+			return target;
+		}
+		return nullptr;
 	}
 
 	void* adorn_render_pre_submit_pass_target()
@@ -382,8 +461,8 @@ namespace rml::graphics
 		GraphicsRegistry::instance().set_sky_stage_enabled(enabled);
 	}
 
-	void set_engine_clouds_hidden(const bool hidden)
+	RenderCallbackId add_device_teardown_callback(DeviceCallback callback)
 	{
-		GraphicsRegistry::instance().set_engine_clouds_hidden(hidden);
+		return GraphicsRegistry::instance().add_device_teardown_callback(std::move(callback));
 	}
 }

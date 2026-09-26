@@ -16,6 +16,7 @@ namespace RBX
 	namespace Graphics
 	{
 		class AdornRender;
+		class Device;
 		class DeviceContext;
 		class Framebuffer;
 		class RenderCamera;
@@ -46,5 +47,6 @@ namespace rml
 		static void scene_manager_render_scene(void* self, RBX::Graphics::DeviceContext* context, RBX::Graphics::Framebuffer* target, const void* camera, RBX::ArrayView<RBX::Graphics::Framebuffer*> extra, std::uint32_t capture_mode);
 		static void clouds_update(void* clouds, RBX::Graphics::DeviceContext* context, void* view_info, const RBX::Graphics::RenderCamera* camera, RBX::Graphics::Framebuffer* main_framebuffer, RBX::Graphics::GlobalShaderData* globals, const void* camera_change, void* stats);
 		static void clouds_composite(void* clouds, RBX::Graphics::DeviceContext* context, const void* camera, RBX::Graphics::GlobalShaderData* globals, void* stats);
+		static void* device_destroy(RBX::Graphics::Device* self, unsigned int flags);
 	};
 }

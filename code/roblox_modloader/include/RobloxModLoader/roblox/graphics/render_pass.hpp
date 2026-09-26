@@ -48,9 +48,11 @@ namespace rml::graphics
 		const RBX::Graphics::GlobalShaderData* globals{};
 		RBX::Graphics::Texture* scene_depth{};
 		std::uint32_t capture_mode{};
+		bool replaces_engine_clouds{};
 	};
 
 	using RenderCallback = std::function<void(RenderPassContext&)>;
+	using DeviceCallback = std::function<void(RBX::Graphics::Device&)>;
 	using RenderCallbackId = std::uint64_t;
 	using AdornCallback = std::function<void(RBX::Adorn&)>;
 
@@ -60,8 +62,8 @@ namespace rml::graphics
 	RML_EXPORT void add_render_callback(RenderCallback callback);
 	RML_EXPORT RenderCallbackId add_render_callback(RenderStage stage, RenderCallback callback);
 	RML_EXPORT void remove_render_callback(RenderCallbackId id);
+	RML_EXPORT RenderCallbackId add_device_teardown_callback(DeviceCallback callback);
 	RML_EXPORT void set_sky_stage_enabled(bool enabled);
-	RML_EXPORT void set_engine_clouds_hidden(bool hidden);
 	RML_EXPORT void add_adorn_callback(AdornCallback callback);
 	RML_EXPORT RBX::Graphics::AdornRender* adorn_render();
 	RML_EXPORT std::vector<RBX::Graphics::AdornRender*> adorn_renders();
