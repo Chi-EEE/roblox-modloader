@@ -64,17 +64,33 @@ namespace rml::graphics
 		m_frame.fetch_add(1, std::memory_order_acq_rel);
 	}
 
-	void GraphicsRegistry::add_render_callback(RenderCallback callback)
+	RenderCallbackId GraphicsRegistry::add_render_callback(const RenderStage stage, RenderCallback callback)
 	{
+		const auto id = m_next_callback_id.fetch_add(1, std::memory_order_relaxed);
 		std::lock_guard lock(m_callbacks_mutex);
-		m_callbacks.push_back({std::move(callback), 0});
+		m_callbacks.push_back({id, stage, std::move(callback), 0});
+		return id;
 	}
 
-	void GraphicsRegistry::run_render_callbacks(RenderPassContext& context)
+	void GraphicsRegistry::remove_render_callback(const RenderCallbackId id)
 	{
+		std::lock_guard lock(m_callbacks_mutex);
+		std::erase_if(m_callbacks, [id](const Entry& entry) { return entry.id == id; });
+	}
+
+	std::size_t GraphicsRegistry::run_render_callbacks(RenderPassContext& context)
+	{
+		std::size_t invoked = 0;
 		std::lock_guard lock(m_callbacks_mutex);
 		for (auto it = m_callbacks.begin(); it != m_callbacks.end();)
 		{
+			if (it->stage != context.stage)
+			{
+				++it;
+				continue;
+			}
+
+			++invoked;
 			try
 			{
 				it->callback(context);
@@ -100,6 +116,45 @@ namespace rml::graphics
 				++it;
 			}
 		}
+		return invoked;
+	}
+
+	void GraphicsRegistry::begin_scene(RBX::Graphics::SceneManager* scene_manager, const bool engine_clouds, const std::uint32_t capture_mode)
+	{
+		set_scene_manager(scene_manager);
+		m_engine_clouds.store(engine_clouds, std::memory_order_release);
+		m_capture_mode.store(capture_mode, std::memory_order_release);
+	}
+
+	void GraphicsRegistry::set_sky_stage_available(const bool available)
+	{
+		m_sky_stage_available.store(available, std::memory_order_release);
+	}
+
+	void GraphicsRegistry::set_sky_stage_enabled(const bool enabled)
+	{
+		if (m_sky_stage_enabled.exchange(enabled, std::memory_order_acq_rel) != enabled)
+			RML_INFO("Sky stage {}", enabled ? "enabled" : "disabled");
+	}
+
+	void GraphicsRegistry::set_engine_clouds_hidden(const bool hidden)
+	{
+		m_engine_clouds_hidden.store(hidden, std::memory_order_release);
+	}
+
+	bool GraphicsRegistry::sky_stage_forced() const
+	{
+		return m_sky_stage_available.load(std::memory_order_acquire) && m_sky_stage_enabled.load(std::memory_order_acquire);
+	}
+
+	bool GraphicsRegistry::engine_clouds_visible() const
+	{
+		return m_engine_clouds.load(std::memory_order_acquire) && !m_engine_clouds_hidden.load(std::memory_order_acquire);
+	}
+
+	std::uint32_t GraphicsRegistry::capture_mode() const
+	{
+		return m_capture_mode.load(std::memory_order_acquire);
 	}
 
 	void GraphicsRegistry::add_adorn_callback(AdornCallback callback)
@@ -309,6 +364,26 @@ namespace rml::graphics
 
 	void add_render_callback(RenderCallback callback)
 	{
-		GraphicsRegistry::instance().add_render_callback(std::move(callback));
+		GraphicsRegistry::instance().add_render_callback(RenderStage::Scene, std::move(callback));
+	}
+
+	RenderCallbackId add_render_callback(const RenderStage stage, RenderCallback callback)
+	{
+		return GraphicsRegistry::instance().add_render_callback(stage, std::move(callback));
+	}
+
+	void remove_render_callback(const RenderCallbackId id)
+	{
+		GraphicsRegistry::instance().remove_render_callback(id);
+	}
+
+	void set_sky_stage_enabled(const bool enabled)
+	{
+		GraphicsRegistry::instance().set_sky_stage_enabled(enabled);
+	}
+
+	void set_engine_clouds_hidden(const bool hidden)
+	{
+		GraphicsRegistry::instance().set_engine_clouds_hidden(hidden);
 	}
 }

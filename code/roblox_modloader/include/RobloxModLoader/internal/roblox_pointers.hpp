@@ -159,6 +159,8 @@ struct RobloxPointers
 	functions::event_descriptor_ctor event_descriptor_ctor;
 	functions::visual_engine_begin_render visual_engine_begin_render;
 	functions::scene_manager_render_scene scene_manager_render_scene;
+	functions::clouds_update clouds_update;
+	functions::clouds_composite clouds_composite;
 
 	const std::vector<const RBX::Reflection::Type*>* type_registry;
 };

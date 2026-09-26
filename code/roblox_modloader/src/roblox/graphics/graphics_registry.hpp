@@ -23,8 +23,16 @@ namespace rml::graphics
 		void set_visual_engine(RBX::Graphics::VisualEngine* engine);
 		void set_scene_manager(RBX::Graphics::SceneManager* scene_manager);
 		void advance_frame();
-		void add_render_callback(RenderCallback callback);
-		void run_render_callbacks(RenderPassContext& context);
+		RenderCallbackId add_render_callback(RenderStage stage, RenderCallback callback);
+		void remove_render_callback(RenderCallbackId id);
+		std::size_t run_render_callbacks(RenderPassContext& context);
+		void begin_scene(RBX::Graphics::SceneManager* scene_manager, bool engine_clouds, std::uint32_t capture_mode);
+		void set_sky_stage_available(bool available);
+		void set_sky_stage_enabled(bool enabled);
+		void set_engine_clouds_hidden(bool hidden);
+		[[nodiscard]] bool sky_stage_forced() const;
+		[[nodiscard]] bool engine_clouds_visible() const;
+		[[nodiscard]] std::uint32_t capture_mode() const;
 		void add_adorn_callback(AdornCallback callback);
 		void run_adorn_callbacks(RBX::Graphics::AdornRender& adorn);
 		[[nodiscard]] RBX::Graphics::AdornRender* adorn_render();
@@ -34,6 +42,8 @@ namespace rml::graphics
 	private:
 		struct Entry
 		{
+			RenderCallbackId id;
+			RenderStage stage;
 			RenderCallback callback;
 			unsigned failures;
 		};
@@ -56,5 +66,11 @@ namespace rml::graphics
 		std::mutex m_adorn_mutex;
 		std::vector<AdornEntry> m_adorn_renders;
 		std::atomic<int> m_validation{0};
+		std::atomic<RenderCallbackId> m_next_callback_id{1};
+		std::atomic<bool> m_sky_stage_available{false};
+		std::atomic<bool> m_sky_stage_enabled{false};
+		std::atomic<bool> m_engine_clouds_hidden{false};
+		std::atomic<bool> m_engine_clouds{false};
+		std::atomic<std::uint32_t> m_capture_mode{0};
 	};
 }

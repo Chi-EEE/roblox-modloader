@@ -146,6 +146,18 @@ namespace rml
 			        g_pointers->m_roblox_pointers.scene_manager_render_scene = ptr.as<functions::scene_manager_render_scene>();
 		        }
 		    },
+		    {"CLOUDS_UPDATE",
+		        "40 55 41 54 41 55 41 56 41 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 80 B9 CB 00 00 00 00 4D 8B F9",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.clouds_update = ptr.as<functions::clouds_update>();
+		        }
+		    },
+		    {"CLOUDS_COMPOSITE",
+		        "80 B9 CB 00 00 00 00 49 8B C1 75 ? 80 3D ? ? ? ? 00 74 ? 80 39 00 74 ? 4C 8B 4C 24 28 4C 8B C0 E9",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.clouds_composite = ptr.as<functions::clouds_composite>();
+		        }
+		    },
 		    {"CLASS_DESCRIPTOR_CTOR",
 		        "48 89 5C 24 18 48 89 54 24 10 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 70 4D 8B D0",
 		        [](const memory::handle ptr) {

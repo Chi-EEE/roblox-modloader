@@ -64,6 +64,13 @@ namespace rml
 			DetourHookHelper::add<Hooks::scene_manager_render_scene>("SCENE_MANAGER_RENDER_SCENE",
 			    reinterpret_cast<void*>(g_pointers->m_roblox_pointers.scene_manager_render_scene));
 
+		if (g_pointers->m_roblox_pointers.clouds_update && g_pointers->m_roblox_pointers.clouds_composite)
+		{
+			DetourHookHelper::add<Hooks::clouds_update>("CLOUDS_UPDATE", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.clouds_update));
+			DetourHookHelper::add<Hooks::clouds_composite>("CLOUDS_COMPOSITE", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.clouds_composite));
+			graphics::GraphicsRegistry::instance().set_sky_stage_available(true);
+		}
+
 		if (const auto pre_submit_pass = graphics::adorn_render_pre_submit_pass_target())
 			DetourHookHelper::add<Hooks::adorn_render_pre_submit_pass>("ADORN_RENDER_PRE_SUBMIT_PASS", pre_submit_pass);
 
