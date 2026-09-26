@@ -316,7 +316,7 @@ namespace RBX
 		};
 
 	private:
-		std::byte reserved_88[0x28];
+		std::byte reserved_88[0x40];
 
 	protected:
 		Instance()
@@ -342,6 +342,6 @@ namespace RBX
 	RML_ASSERT_OFFSET(Instance, parent, 0x68);
 	RML_ASSERT_OFFSET(Instance, name, 0x70);
 	RML_ASSERT_OFFSET(Instance, children, 0x78);
-	RML_ASSERT_SIZE(Instance, 0xB0);
+	RML_ASSERT_SIZE(Instance, 0xC8);
 	RML_LAYOUT_DIAGNOSTIC_POP()
 }
