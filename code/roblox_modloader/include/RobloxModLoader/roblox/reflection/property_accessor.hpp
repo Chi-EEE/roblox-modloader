@@ -1,5 +1,8 @@
 #pragma once
 
+#include "g3d/Color3.h"
+#include "g3d/Vector3.h"
+
 #include <cstdint>
 #include <new>
 #include <string>
@@ -13,7 +16,9 @@ namespace rml::reflection
 		Int,
 		Float,
 		Double,
-		String
+		String,
+		Color3,
+		Vector3
 	};
 
 	template<typename T>
@@ -47,6 +52,18 @@ namespace rml::reflection
 	struct property_type_of<std::string>
 	{
 		static constexpr PropertyType value = PropertyType::String;
+	};
+
+	template<>
+	struct property_type_of<G3D::Color3>
+	{
+		static constexpr PropertyType value = PropertyType::Color3;
+	};
+
+	template<>
+	struct property_type_of<G3D::Vector3>
+	{
+		static constexpr PropertyType value = PropertyType::Vector3;
 	};
 
 	template<typename T>

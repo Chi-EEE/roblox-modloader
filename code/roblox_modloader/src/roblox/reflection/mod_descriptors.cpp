@@ -71,6 +71,8 @@ namespace rml::reflection
 		    {"RBX::Reflection::TypedPropertyDescriptor<float>", "float", RBX::Reflection::TypeId::Float, true, true},
 		    {"RBX::Reflection::TypedPropertyDescriptor<double>", "double", RBX::Reflection::TypeId::Double, true, true},
 		    {"RBX::Reflection::TypedPropertyDescriptor<std::string>", "std::string", RBX::Reflection::TypeId::String, false, false},
+		    {"RBX::Reflection::TypedPropertyDescriptor<RBX::Color3>", "RBX::Color3", RBX::Reflection::TypeId::Color3, false, false},
+		    {"RBX::Reflection::TypedPropertyDescriptor<RBX::Vector3>", "RBX::Vector3", RBX::Reflection::TypeId::Vector3, false, false},
 		};
 		return infos[static_cast<std::size_t>(type)];
 	}
@@ -84,6 +86,8 @@ namespace rml::reflection
 		case PropertyType::Float: return VariantOps<float>::table;
 		case PropertyType::Double: return VariantOps<double>::table;
 		case PropertyType::String: return VariantOps<std::string>::table;
+		case PropertyType::Color3: return VariantOps<G3D::Color3>::table;
+		case PropertyType::Vector3: return VariantOps<G3D::Vector3>::table;
 		}
 		return nullptr;
 	}
@@ -98,6 +102,8 @@ namespace rml::reflection
 		case PropertyType::Float: return Type::try_singleton<float>();
 		case PropertyType::Double: return Type::try_singleton<double>();
 		case PropertyType::String: return Type::try_singleton<std::string>();
+		case PropertyType::Color3: return Type::try_singleton<G3D::Color3>();
+		case PropertyType::Vector3: return Type::try_singleton<G3D::Vector3>();
 		}
 		return nullptr;
 	}

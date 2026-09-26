@@ -54,4 +54,18 @@ namespace RBX::Reflection
 		static const Type& type = TypeIndex::require("string");
 		return type;
 	}
+
+	template<>
+	const Type& Type::get_singleton<G3D::Color3>()
+	{
+		static const Type& type = TypeIndex::require("Color3");
+		return type;
+	}
+
+	template<>
+	const Type& Type::get_singleton<G3D::Vector3>()
+	{
+		static const Type& type = TypeIndex::require("Vector3");
+		return type;
+	}
 }

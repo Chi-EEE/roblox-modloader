@@ -9,6 +9,12 @@
 #include <string>
 #include <unordered_map>
 
+namespace G3D
+{
+	class Color3;
+	class Vector3;
+}
+
 namespace RBX::Reflection
 {
 	namespace TypeId
@@ -83,6 +89,10 @@ namespace RBX::Reflection
 	RML_EXPORT const Type& Type::get_singleton<double>();
 	template<>
 	RML_EXPORT const Type& Type::get_singleton<std::string>();
+	template<>
+	RML_EXPORT const Type& Type::get_singleton<G3D::Color3>();
+	template<>
+	RML_EXPORT const Type& Type::get_singleton<G3D::Vector3>();
 
 	template<typename T>
 	class TType : public Type
