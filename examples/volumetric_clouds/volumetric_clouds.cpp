@@ -42,6 +42,16 @@ namespace clouds
 		return 0;
 	}
 
+	int VolumetricClouds::set_global_wind(lua_State* L)
+	{
+		const int top = lua_gettop(L);
+		if (top < 3 || !lua_isnumber(L, top - 2) || !lua_isnumber(L, top - 1) || !lua_isnumber(L, top))
+			luaL_errorL(L, "SetGlobalWind expects three numbers");
+		m_settings.global_wind = RBX::Vector3(static_cast<float>(lua_tonumberx(L, top - 2, nullptr)), static_cast<float>(lua_tonumberx(L, top - 1, nullptr)), static_cast<float>(lua_tonumberx(L, top, nullptr)));
+		CloudRegistry::instance().update(this, m_settings);
+		return 0;
+	}
+
 	void VolumetricClouds::define(rml::InitContext& context)
 	{
 		using Self = VolumetricClouds;
@@ -58,8 +68,11 @@ namespace clouds
 		    .property("BaseAltitude", &Self::get<&S::base_altitude>, &Self::set<&S::base_altitude>, "Layer")
 		    .property("Thickness", &Self::get<&S::thickness>, &Self::set<&S::thickness>, "Layer")
 		    .property("HorizonFade", &Self::get<&S::horizon_fade>, &Self::set<&S::horizon_fade>, "Layer")
+		    .property("UseGlobalWind", &Self::get<&S::use_global_wind>, &Self::set<&S::use_global_wind>, "Wind")
+		    .property("GlobalWindScale", &Self::get<&S::global_wind_scale>, &Self::set<&S::global_wind_scale>, "Wind")
 		    .property("WindDirection", &Self::get<&S::wind_direction>, &Self::set<&S::wind_direction>, "Wind")
 		    .property("WindSpeed", &Self::get<&S::wind_speed>, &Self::set<&S::wind_speed>, "Wind")
+		    .property("Evolution", &Self::get<&S::evolution>, &Self::set<&S::evolution>, "Wind")
 		    .property("Color", &Self::get<&S::color>, &Self::set<&S::color>, "Lighting")
 		    .property("SunIntensity", &Self::get<&S::sun_intensity>, &Self::set<&S::sun_intensity>, "Lighting")
 		    .property("AmbientIntensity", &Self::get<&S::ambient_intensity>, &Self::set<&S::ambient_intensity>, "Lighting")
@@ -68,6 +81,7 @@ namespace clouds
 		    .property("Quality", &Self::get<&S::quality>, &Self::set<&S::quality>, "Behavior")
 		    .property("Seed", &Self::get<&S::seed>, &Self::set<&S::seed>, "Behavior")
 		    .function("ApplyPreset", &Self::apply_preset)
+		    .function("SetGlobalWind", &Self::set_global_wind)
 		    .commit();
 	}
 }

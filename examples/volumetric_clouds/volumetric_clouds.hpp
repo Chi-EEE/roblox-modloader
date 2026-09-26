@@ -37,6 +37,7 @@ namespace clouds
 		}
 
 		int apply_preset(lua_State* L);
+		int set_global_wind(lua_State* L);
 		void on_ancestor_changed(const RBX::AncestorChanged& change) override;
 
 		static void define(rml::InitContext& context);

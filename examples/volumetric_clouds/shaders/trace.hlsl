@@ -87,12 +87,12 @@ float SampleDensity(float3 pos, float hf, float mip, bool detail)
     float profile = HeightProfile(hf, saturate(Erosion.z + (weather.y - 0.5) * 0.5));
     if (profile <= 0 || coverage <= 0)
         return 0;
-    float3 sp = float3(pos.x + Wind.x, pos.y, pos.z + Wind.y) * Shape.w;
+    float3 sp = float3(pos.x + Wind.x + Motion.z * hf, pos.y + Motion.x, pos.z + Wind.y + Motion.w * hf) * Shape.w;
     float n = lerp(1, ShapeNoise.SampleLevel(ShapeSampler, sp, mip), Shape.z);
     float base = saturate(Remap(n * profile, 1 - coverage, 1, 0, 1)) * coverage;
     if (detail && base > 0)
     {
-        float3 dp = float3(pos.x + Wind.z, pos.y, pos.z + Wind.w) * Erosion.y;
+        float3 dp = float3(pos.x + Wind.z, pos.y + Motion.y, pos.z + Wind.w) * Erosion.y;
         float d = DetailNoise.SampleLevel(DetailSampler, dp, mip);
         d = lerp(d, 1 - d, saturate(hf * 4));
         base = saturate(Remap(base, d * Erosion.x * 0.35, 1, 0, 1));

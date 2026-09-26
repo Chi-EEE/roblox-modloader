@@ -21,6 +21,8 @@ namespace clouds
 		base_altitude = std::clamp(base_altitude, -10000.f, 200000.f);
 		thickness = std::clamp(thickness, 100.f, 50000.f);
 		wind_speed = std::clamp(wind_speed, 0.f, 1000.f);
+		global_wind_scale = std::clamp(global_wind_scale, 0.f, 50.f);
+		evolution = std::clamp(evolution, 0.f, 10.f);
 		color = RBX::Color3(unit(color.r), unit(color.g), unit(color.b));
 		sun_intensity = std::clamp(sun_intensity, 0.f, 4.f);
 		ambient_intensity = std::clamp(ambient_intensity, 0.f, 4.f);

@@ -18,8 +18,12 @@ namespace clouds
 		float erosion_scale{107.f};
 		float base_altitude{3000.f};
 		float thickness{4000.f};
+		bool use_global_wind{true};
+		float global_wind_scale{4.f};
 		RBX::Vector3 wind_direction{1.f, 0.f, 0.3f};
 		float wind_speed{30.f};
+		float evolution{1.f};
+		RBX::Vector3 global_wind{0.f, 0.f, 0.f};
 		RBX::Color3 color{1.f, 1.f, 1.f};
 		float sun_intensity{1.f};
 		float ambient_intensity{1.f};
