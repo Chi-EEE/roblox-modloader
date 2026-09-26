@@ -13,6 +13,7 @@
 #include "pointers.hpp"
 
 #include <cstring>
+#include <stdexcept>
 
 RML_LOG_SCOPE("ClassRegistry");
 
@@ -355,6 +356,14 @@ namespace rml::reflection
 	{
 		const auto it = m_by_descriptor.find(descriptor_of(instance));
 		return it == m_by_descriptor.end() ? nullptr : it->second;
+	}
+
+	void* engine_virtual(const RBX::Instance* instance, const std::size_t slot)
+	{
+		const auto* entry = ClassRegistry::instance().class_of(instance);
+		if (!entry || !entry->engine_vtable)
+			throw std::logic_error("engine_virtual called on an instance that is not a mod class");
+		return entry->engine_vtable[slot];
 	}
 
 	void** ClassRegistry::vtable_for(RegisteredClass& entry, void** derived_vtable)

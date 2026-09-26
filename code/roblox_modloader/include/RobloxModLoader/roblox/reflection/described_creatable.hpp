@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <new>
+#include <type_traits>
 #include <utility>
 
 namespace rml::reflection
@@ -40,6 +41,7 @@ namespace rml::reflection
 	RML_EXPORT RBX::Reflection::Variant make_variant(PropertyType type, const void* value);
 	RML_EXPORT void destroy_variant(RBX::Reflection::Variant& variant);
 	RML_EXPORT void fire_event(RBX::Instance* instance, std::ptrdiff_t member_offset, const RBX::Reflection::EventArguments& arguments);
+	RML_EXPORT void* engine_virtual(const RBX::Instance* instance, std::size_t slot);
 
 	template<typename Class, typename Member>
 	std::ptrdiff_t member_offset(Member Class::* member)
@@ -77,6 +79,15 @@ namespace rml::reflection
 			fire_event(this, member_offset(member), arguments);
 			for (auto& argument : arguments)
 				destroy_variant(argument);
+		}
+
+		template<typename Ret, typename Class, typename... Params, typename... Args>
+		Ret call_engine_base(Ret (Class::*method)(Params...), Args&&... args)
+		{
+			static_assert(std::is_void_v<Ret> || std::is_scalar_v<Ret>, "engine base calls return void or a scalar");
+			const auto slot = rml::vtable_index_of(method, args...);
+			const auto function = reinterpret_cast<Ret (*)(Derived*, Params...)>(engine_virtual(this, slot));
+			return function(static_cast<Derived*>(this), std::forward<Args>(args)...);
 		}
 
 	private:
