@@ -7,6 +7,7 @@
 #include "RobloxModLoader/memory/module.hpp"
 #include "RobloxModLoader/memory/string_anchor.hpp"
 #include "RobloxModLoader/platform/memory/host_image.hpp"
+#include "RobloxModLoader/platform/memory/memory_protection.hpp"
 #include "RobloxModLoader/roblox/graphics/adorn_render.hpp"
 #include "RobloxModLoader/roblox/graphics/device.hpp"
 #include "RobloxModLoader/roblox/graphics/shader_manager.hpp"
@@ -233,13 +234,13 @@ namespace rml::graphics
 			const auto slots = vtable_index_of(&RBX::Graphics::Device::create_texture_with_hardware_buffer_impl, RBX::Graphics::Texture::Type::Type_2D, RBX::Graphics::Texture::Format::RGBA8, 0u, 0u, 0u, 0u, 0u, 0u, RBX::Graphics::Texture::Usage::Static, std::string{}, nullptr) + 1;
 			for (std::size_t slot = 0; slot < slots; ++slot)
 			{
-				if (!image.contains(memory::handle(vtable[slot])))
+				if (!image.contains(memory::handle(vtable[slot])) || !platform::is_executable(vtable[slot]))
 				{
 					RML_ERROR("graphics surface disabled: Device vtable slot {} is not code", slot);
 					return false;
 				}
 			}
-			if (image.contains(memory::handle(vtable[slots])))
+			if (platform::is_executable(vtable[slots]))
 			{
 				RML_ERROR("graphics surface disabled: Device vtable has more than {} slots", slots);
 				return false;

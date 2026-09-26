@@ -30,4 +30,12 @@ namespace rml::platform
 		DWORD temp = 0;
 		VirtualProtect(address, size, static_cast<DWORD>(previous), &temp);
 	}
+
+	bool is_executable(const void* address) noexcept
+	{
+		MEMORY_BASIC_INFORMATION info{};
+		if (!address || !VirtualQuery(address, &info, sizeof(info)) || info.State != MEM_COMMIT)
+			return false;
+		return (info.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) != 0;
+	}
 }

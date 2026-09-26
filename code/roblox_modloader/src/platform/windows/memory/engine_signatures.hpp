@@ -134,6 +134,18 @@ namespace rml
 			        g_pointers->m_roblox_pointers.signal_mutex_get = ptr.add(21).rip().as<functions::signal_mutex_get>();
 		        }
 		    },
+		    {"VISUAL_ENGINE_BEGIN_RENDER",
+		        "48 89 5C 24 08 57 48 83 EC 20 80 3D ? ? ? ? 00 48 8B D9 74 0E",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.visual_engine_begin_render = ptr.as<functions::visual_engine_begin_render>();
+		        }
+		    },
+		    {"SCENE_MANAGER_RENDER_SCENE",
+		        "48 8B C4 48 89 58 10 48 89 70 18 48 89 78 20 55 41 54 41 55 41 56 41 57 48 8D 6C 24 80 48 81 EC 80 01 00 00 0F 29 70 C8 0F 29 78 B8 4D",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.scene_manager_render_scene = ptr.as<functions::scene_manager_render_scene>();
+		        }
+		    },
 		    {"SIGNAL_SLOT_FREE",
 		        "48 89 5C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B D9 E8 ? ? ? ? 48 8D 50 10 BF FF FF FF FF 48 3B DA 0F 82",
 		        [](const memory::handle ptr) {

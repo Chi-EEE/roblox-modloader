@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RobloxModLoader/internal/platform.hpp"
 #include "RobloxModLoader/util/layout_assert.hpp"
 
 #include <cstddef>
@@ -14,9 +15,13 @@ namespace RBX::Graphics
 	class VisualEngine
 	{
 	public:
+#if defined(RML_WINDOWS)
+		std::byte reserved_0[0xD8];
+#else
 		std::byte reserved_0[0x108];
+#endif
 		Device* device;
-		std::byte reserved_110[0xAB8];
+		std::byte reserved_after_device[0xAB8];
 		union {
 			std::unique_ptr<IShaderManager> shader_manager;
 		};
@@ -43,9 +48,16 @@ namespace RBX::Graphics
 	};
 
 	RML_LAYOUT_DIAGNOSTIC_PUSH()
+#if defined(RML_WINDOWS)
+	RML_ASSERT_OFFSET(VisualEngine, device, 0xD8);
+	RML_ASSERT_OFFSET(VisualEngine, shader_manager, 0xB98);
+	RML_ASSERT_OFFSET(VisualEngine, external_shader_manager, 0xBB0);
+	RML_ASSERT_OFFSET(VisualEngine, scene_manager, 0xBC0);
+#else
 	RML_ASSERT_OFFSET(VisualEngine, device, 0x108);
 	RML_ASSERT_OFFSET(VisualEngine, shader_manager, 0xBC8);
 	RML_ASSERT_OFFSET(VisualEngine, external_shader_manager, 0xBE0);
 	RML_ASSERT_OFFSET(VisualEngine, scene_manager, 0xBF0);
+#endif
 	RML_LAYOUT_DIAGNOSTIC_POP()
 }

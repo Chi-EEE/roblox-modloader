@@ -7,7 +7,7 @@
 
 #include <memory>
 
-static constexpr const char* k_vertex = R"(
+static constexpr const char* k_metal_vertex = R"(
 #include <metal_stdlib>
 using namespace metal;
 
@@ -25,11 +25,26 @@ vertex Varyings rml_tint_vs(uint id [[vertex_id]])
 }
 )";
 
-static constexpr const char* k_fragment = R"(
+static constexpr const char* k_metal_fragment = R"(
 #include <metal_stdlib>
 using namespace metal;
 
 fragment float4 rml_tint_fs()
+{
+	return float4(1.0, 0.0, 0.0, 0.25);
+}
+)";
+
+static constexpr const char* k_hlsl_vertex = R"(
+float4 rml_tint_vs(uint id : SV_VertexID) : SV_Position
+{
+	const float2 corners[3] = {float2(-1.0, -1.0), float2(3.0, -1.0), float2(-1.0, 3.0)};
+	return float4(corners[id], 0.0, 1.0);
+}
+)";
+
+static constexpr const char* k_hlsl_fragment = R"(
+float4 rml_tint_fs() : SV_Target
 {
 	return float4(1.0, 0.0, 0.0, 0.25);
 }
@@ -53,7 +68,14 @@ class shader_demo final : public ModBase
 
 		try
 		{
-			m_program = rml::graphics::create_program(device, k_vertex, k_fragment, "rml_tint");
+			auto program = rml::graphics::create_program(device, {k_metal_vertex, k_hlsl_vertex, "rml_tint_vs"}, {k_metal_fragment, k_hlsl_fragment, "rml_tint_fs"}, "rml_tint");
+			if (!program)
+			{
+				m_log->error("shader setup failed: {}", program.error());
+				m_failed = true;
+				return false;
+			}
+			m_program = std::move(*program);
 			m_layout = device.create_vertex_layout_impl({}, {}, "rml_tint");
 			m_geometry = device.create_geometry_impl(m_layout, nullptr, 0, nullptr, 0, "rml_tint");
 			m_log->info("program {} layout {} geometry {}", static_cast<void*>(m_program.get()), static_cast<void*>(m_layout.get()), static_cast<void*>(m_geometry.get()));
