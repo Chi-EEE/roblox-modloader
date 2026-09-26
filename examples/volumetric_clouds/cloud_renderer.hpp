@@ -45,6 +45,7 @@ namespace clouds
 		float params[4];
 		float temporal[4];
 		float depth_info[4];
+		float motion[4];
 	};
 
 	static_assert(sizeof(CloudFrame) % 16 == 0);
@@ -61,10 +62,11 @@ namespace clouds
 	class CloudRenderer
 	{
 	public:
-		CloudRenderer(std::filesystem::path cache_file, std::shared_ptr<spdlog::logger> log);
+		CloudRenderer(std::filesystem::path cache_file, std::shared_ptr<spdlog::logger> log, bool device_teardown_notified);
 
 		void prepare(rml::graphics::RenderPassContext& pass);
 		void composite(rml::graphics::RenderPassContext& pass);
+		void on_device_destroyed(RBX::Graphics::Device& device);
 
 	private:
 		struct Programs
@@ -95,6 +97,17 @@ namespace clouds
 			std::array<std::shared_ptr<RBX::Graphics::Framebuffer>, 2> history_fb;
 		};
 
+		struct GpuResources
+		{
+			Programs programs;
+			std::shared_ptr<RBX::Graphics::VertexLayout> layout;
+			std::shared_ptr<RBX::Graphics::Geometry> geometry;
+			std::shared_ptr<RBX::Graphics::Texture> shape;
+			std::shared_ptr<RBX::Graphics::Texture> detail;
+			std::shared_ptr<RBX::Graphics::Texture> weather;
+			Targets targets;
+		};
+
 		bool ensure_device(RBX::Graphics::Device& device);
 		bool ensure_noise(RBX::Graphics::Device& device);
 		void ensure_targets(RBX::Graphics::Device& device, std::uint32_t width, std::uint32_t height, bool checkerboard);
@@ -107,17 +120,12 @@ namespace clouds
 		void release();
 
 		std::shared_ptr<spdlog::logger> m_log;
+		bool m_device_teardown_notified{};
 		std::future<NoiseSet> m_noise_future;
 		std::optional<NoiseSet> m_noise;
 		RBX::Graphics::Device* m_device{};
 		bool m_failed{};
-		Programs m_programs;
-		std::shared_ptr<RBX::Graphics::VertexLayout> m_layout;
-		std::shared_ptr<RBX::Graphics::Geometry> m_geometry;
-		std::shared_ptr<RBX::Graphics::Texture> m_shape;
-		std::shared_ptr<RBX::Graphics::Texture> m_detail;
-		std::shared_ptr<RBX::Graphics::Texture> m_weather;
-		Targets m_targets;
+		GpuResources m_gpu;
 		CloudFrame m_frame{};
 		std::uint32_t m_history_index{};
 		bool m_history_valid{};
@@ -129,6 +137,8 @@ namespace clouds
 		RBX::Vector3 m_prev_view_dir;
 		double m_shape_offset[2]{};
 		double m_detail_offset[2]{};
+		double m_shape_evolution{};
+		double m_detail_evolution{};
 		bool m_active_logged{};
 	};
 }

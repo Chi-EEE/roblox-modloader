@@ -31,7 +31,11 @@ public:
 	{
 		using rml::graphics::RenderPassContext;
 		using rml::graphics::RenderStage;
-		m_renderer = std::make_unique<clouds::CloudRenderer>(paths().dir("cache") / "noise.bin", m_log);
+		m_teardown = rml::graphics::add_device_teardown_callback([this](RBX::Graphics::Device& device) {
+			if (m_renderer)
+				m_renderer->on_device_destroyed(device);
+		});
+		m_renderer = std::make_unique<clouds::CloudRenderer>(paths().dir("cache") / "noise.bin", m_log, m_teardown != 0);
 		m_prepare = rml::graphics::add_render_callback(RenderStage::SkyPrepare, [this](RenderPassContext& pass) { m_renderer->prepare(pass); });
 		m_composite = rml::graphics::add_render_callback(RenderStage::Sky, [this](RenderPassContext& pass) { m_renderer->composite(pass); });
 	}
@@ -40,8 +44,8 @@ public:
 	{
 		rml::graphics::remove_render_callback(m_prepare);
 		rml::graphics::remove_render_callback(m_composite);
+		rml::graphics::remove_render_callback(m_teardown);
 		rml::graphics::set_sky_stage_enabled(false);
-		rml::graphics::set_engine_clouds_hidden(false);
 		m_renderer.reset();
 	}
 
@@ -50,6 +54,7 @@ private:
 	std::unique_ptr<clouds::CloudRenderer> m_renderer;
 	rml::graphics::RenderCallbackId m_prepare{};
 	rml::graphics::RenderCallbackId m_composite{};
+	rml::graphics::RenderCallbackId m_teardown{};
 };
 
 extern "C"

@@ -46,7 +46,8 @@ float4 ReconstructPS(float4 position : SV_Position) : SV_Target
     {
         float4 c = TraceColor.Load(int3(clamp(tp, 0, limit), 0));
         current = count > 0 ? sum / count : float4(c.rgb, DecodeT(c.a));
-        nearestDistance = TraceDist.Load(int3(clamp(tp, 0, limit), 0));
+        if (count == 0)
+            nearestDistance = TraceDist.Load(int3(clamp(tp, 0, limit), 0));
     }
     if (fresh)
     {

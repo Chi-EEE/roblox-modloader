@@ -22,6 +22,7 @@ cbuffer CloudFrame : register(b2)
     float4 Params;
     float4 Temporal;
     float4 DepthInfo;
+    float4 Motion;
 };
 
 static const float PI = 3.14159265;
@@ -73,4 +74,26 @@ bool ClassBilinear(Texture2D<float4> tex, float2 uv, float2 size, bool sky, out 
     }
     value = weight > 1e-4 ? sum / weight : 0;
     return weight > 1e-4;
+}
+
+bool NearestOfClass(Texture2D<float4> tex, float2 uv, float2 size, bool sky, out float4 value)
+{
+    int2 limit = int2(size) - 1;
+    int2 center = clamp(int2(uv * size), 0, limit);
+    float best = 1e30;
+    value = 0;
+    [unroll] for (int y = -1; y <= 1; ++y)
+    {
+        [unroll] for (int x = -1; x <= 1; ++x)
+        {
+            float4 c = tex.Load(int3(clamp(center + int2(x, y), 0, limit), 0));
+            float d = x * x + y * y;
+            if (IsSky(c.a) == sky && d < best)
+            {
+                best = d;
+                value = float4(c.rgb, DecodeT(c.a));
+            }
+        }
+    }
+    return best < 1e30;
 }

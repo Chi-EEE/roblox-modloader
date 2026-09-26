@@ -14,12 +14,18 @@ float4 CompositePS(float4 position : SV_Position) : SV_Target
 #if RML_COMPOSITE_SKY
     if (!ClassBilinear(CloudColor, uv, HistorySize.xy, true, value))
     {
-        float4 c = CloudColor.Load(int3(clamp(int2(uv * HistorySize.xy), 0, int2(HistorySize.xy) - 1), 0));
-        value = float4(c.rgb, DecodeT(c.a));
+        if (!NearestOfClass(CloudColor, uv, HistorySize.xy, true, value))
+        {
+            float4 c = CloudColor.Load(int3(clamp(int2(uv * HistorySize.xy), 0, int2(HistorySize.xy) - 1), 0));
+            value = float4(c.rgb, DecodeT(c.a));
+        }
     }
 #else
     if (!ClassBilinear(CloudColor, uv, HistorySize.xy, false, value))
-        discard;
+    {
+        if (!NearestOfClass(CloudColor, uv, HistorySize.xy, false, value))
+            discard;
+    }
 #endif
     float alpha = saturate(1 - value.a);
     if (alpha < 0.002)

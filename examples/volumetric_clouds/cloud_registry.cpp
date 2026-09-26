@@ -74,6 +74,5 @@ namespace clouds
 			return;
 		m_any_active = any;
 		rml::graphics::set_sky_stage_enabled(any);
-		rml::graphics::set_engine_clouds_hidden(any);
 	}
 }

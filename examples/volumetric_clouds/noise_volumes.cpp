@@ -276,23 +276,50 @@ namespace clouds
 		return true;
 	}
 
+	static bool matches(const NoiseTexture& texture, const std::uint32_t size, const std::uint32_t depth, const std::uint32_t channels)
+	{
+		if (texture.size != size || texture.depth != depth || texture.channels != channels)
+			return false;
+
+		std::size_t level = 0;
+		for (auto level_size = size, level_depth = depth;; ++level)
+		{
+			if (level >= texture.mips.size() || texture.mips[level].size() != static_cast<std::size_t>(level_size) * level_size * level_depth * channels)
+				return false;
+			if (level_size == 1 && level_depth == 1)
+				break;
+			level_size = std::max(level_size / 2, 1u);
+			level_depth = std::max(level_depth / 2, 1u);
+		}
+		return level + 1 == texture.mips.size();
+	}
+
 	static bool load(const std::filesystem::path& path, NoiseSet& set)
 	{
 		std::ifstream file(path, std::ios::binary);
 		std::array<std::uint32_t, 2> header{};
 		if (!file || !file.read(reinterpret_cast<char*>(header.data()), sizeof(header)) || header[0] != k_cache_magic || header[1] != k_cache_version)
 			return false;
-		return read_texture(file, set.shape) && read_texture(file, set.detail) && read_texture(file, set.weather);
+		return read_texture(file, set.shape) && read_texture(file, set.detail) && read_texture(file, set.weather) && matches(set.shape, 128, 128, 1) &&
+		    matches(set.detail, 32, 32, 1) && matches(set.weather, 512, 1, 2);
 	}
 
 	static void save(const std::filesystem::path& path, const NoiseSet& set)
 	{
-		std::ofstream file(path, std::ios::binary | std::ios::trunc);
-		const std::array<std::uint32_t, 2> header{k_cache_magic, k_cache_version};
-		file.write(reinterpret_cast<const char*>(header.data()), sizeof(header));
-		write_texture(file, set.shape);
-		write_texture(file, set.detail);
-		write_texture(file, set.weather);
+		auto temporary = path;
+		temporary += ".tmp";
+		{
+			std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+			const std::array<std::uint32_t, 2> header{k_cache_magic, k_cache_version};
+			file.write(reinterpret_cast<const char*>(header.data()), sizeof(header));
+			write_texture(file, set.shape);
+			write_texture(file, set.detail);
+			write_texture(file, set.weather);
+			if (!file)
+				return;
+		}
+		std::error_code error;
+		std::filesystem::rename(temporary, path, error);
 	}
 
 	NoiseSet load_or_generate_noise(const std::filesystem::path& cache_file)

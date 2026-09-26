@@ -24,6 +24,8 @@ namespace clouds
 	static constexpr float k_noise_frequency = 1.f / 165000.f;
 	static constexpr float k_weather_frequency = 1.f / 150000.f;
 	static constexpr float k_camera_cut_distance = 250.f;
+	static constexpr float k_detail_drift = 0.35f;
+	static constexpr float k_shear = 0.35f;
 	static constexpr Quality k_qualities[] = {{32, 3, 2, true, 0.35f}, {48, 4, 2, true, 0.35f}, {48, 4, 3, false, 0.12f}, {96, 6, 3, false, 0.1f}};
 	static constexpr int k_pattern[4][2] = {{0, 0}, {1, 1}, {1, 0}, {0, 1}};
 
@@ -111,6 +113,16 @@ namespace clouds
 		return result;
 	}
 
+	static RBX::Vector3 wind_velocity(const CloudSettings& settings)
+	{
+		if (settings.use_global_wind)
+			return RBX::Vector3(settings.global_wind.x, 0.f, settings.global_wind.z) * settings.global_wind_scale;
+
+		const RBX::Vector3 direction(settings.wind_direction.x, 0.f, settings.wind_direction.z);
+		const float length = direction.length();
+		return length > 1e-4f ? direction * (settings.wind_speed / length) : RBX::Vector3(0.f, 0.f, 0.f);
+	}
+
 	static std::shared_ptr<Texture> upload(Device& device, const NoiseTexture& noise, const Texture::Type type, const Texture::Format format, const std::string& name)
 	{
 		const auto mips = static_cast<unsigned>(noise.mips.size());
@@ -138,8 +150,9 @@ namespace clouds
 		return device.create_framebuffer_impl(color, Renderbuffer{}, name);
 	}
 
-	CloudRenderer::CloudRenderer(std::filesystem::path cache_file, std::shared_ptr<spdlog::logger> log) :
-	    m_log(std::move(log))
+	CloudRenderer::CloudRenderer(std::filesystem::path cache_file, std::shared_ptr<spdlog::logger> log, const bool device_teardown_notified) :
+	    m_log(std::move(log)),
+	    m_device_teardown_notified(device_teardown_notified)
 	{
 		m_noise_future = std::async(std::launch::async, [path = std::move(cache_file), log = m_log] {
 			const auto start = std::chrono::steady_clock::now();
@@ -161,14 +174,18 @@ namespace clouds
 
 	void CloudRenderer::release()
 	{
-		m_programs = {};
-		m_geometry.reset();
-		m_layout.reset();
-		m_shape.reset();
-		m_detail.reset();
-		m_weather.reset();
-		m_targets = {};
+		m_gpu = {};
 		m_history_valid = false;
+		m_ready = false;
+	}
+
+	void CloudRenderer::on_device_destroyed(Device& device)
+	{
+		if (m_device != &device)
+			return;
+		release();
+		m_device = nullptr;
+		m_failed = false;
 	}
 
 	bool CloudRenderer::ensure_device(Device& device)
@@ -176,20 +193,26 @@ namespace clouds
 		if (m_device == &device)
 			return !m_failed;
 
+		if (m_device && !m_device_teardown_notified)
+		{
+			// Without teardown notifications the previous device may already be gone, so its resources are leaked, never destroyed.
+			[[maybe_unused]] const auto* abandoned = new GpuResources(std::move(m_gpu));
+		}
 		release();
 		m_device = &device;
 		m_failed = false;
 		try
 		{
-			m_programs.depth = make_program(device, "", shaders::depth, "DepthPS", "rml_clouds_depth");
-			m_programs.depth_msaa = make_program(device, "#define RML_MSAA 1\n", shaders::depth, "DepthPS", "rml_clouds_depth_msaa");
-			m_programs.trace = make_program(device, "", shaders::trace, "TracePS", "rml_clouds_trace");
-			m_programs.reconstruct = make_program(device, "", shaders::reconstruct, "ReconstructPS", "rml_clouds_reconstruct");
-			m_programs.composite_sky = make_program(device, "#define RML_COMPOSITE_SKY 1\n", shaders::composite, "CompositePS", "rml_clouds_composite_sky");
-			m_programs.composite_geometry = make_program(device, "#define RML_COMPOSITE_SKY 0\n", shaders::composite, "CompositePS", "rml_clouds_composite_geometry");
-			m_layout = device.create_vertex_layout_impl({}, {}, "rml_clouds");
-			m_geometry = device.create_geometry_impl(m_layout, nullptr, 0, nullptr, 0, "rml_clouds");
-			m_log->info("Cloud programs ready (trace buffer mask 0x{:X}, texture mask 0x{:X})", m_programs.trace->buffer_mask, m_programs.trace->texture_mask);
+			auto& programs = m_gpu.programs;
+			programs.depth = make_program(device, "", shaders::depth, "DepthPS", "rml_clouds_depth");
+			programs.depth_msaa = make_program(device, "#define RML_MSAA 1\n", shaders::depth, "DepthPS", "rml_clouds_depth_msaa");
+			programs.trace = make_program(device, "", shaders::trace, "TracePS", "rml_clouds_trace");
+			programs.reconstruct = make_program(device, "", shaders::reconstruct, "ReconstructPS", "rml_clouds_reconstruct");
+			programs.composite_sky = make_program(device, "#define RML_COMPOSITE_SKY 1\n", shaders::composite, "CompositePS", "rml_clouds_composite_sky");
+			programs.composite_geometry = make_program(device, "#define RML_COMPOSITE_SKY 0\n", shaders::composite, "CompositePS", "rml_clouds_composite_geometry");
+			m_gpu.layout = device.create_vertex_layout_impl({}, {}, "rml_clouds");
+			m_gpu.geometry = device.create_geometry_impl(m_gpu.layout, nullptr, 0, nullptr, 0, "rml_clouds");
+			m_log->info("Cloud programs ready (trace buffer mask 0x{:X}, texture mask 0x{:X})", programs.trace->buffer_mask, programs.trace->texture_mask);
 		}
 		catch (const std::exception& e)
 		{
@@ -202,7 +225,7 @@ namespace clouds
 
 	bool CloudRenderer::ensure_noise(Device& device)
 	{
-		if (m_shape)
+		if (m_gpu.shape)
 			return true;
 		if (!m_noise)
 		{
@@ -210,15 +233,16 @@ namespace clouds
 				return false;
 			m_noise = m_noise_future.get();
 		}
-		m_shape = upload(device, m_noise->shape, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_shape");
-		m_detail = upload(device, m_noise->detail, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_detail");
-		m_weather = upload(device, m_noise->weather, Texture::Type::Type_2D, Texture::Format::RG8, "rml_clouds_weather");
+		m_gpu.shape = upload(device, m_noise->shape, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_shape");
+		m_gpu.detail = upload(device, m_noise->detail, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_detail");
+		m_gpu.weather = upload(device, m_noise->weather, Texture::Type::Type_2D, Texture::Format::RG8, "rml_clouds_weather");
 		return true;
 	}
 
 	void CloudRenderer::ensure_targets(Device& device, const std::uint32_t width, const std::uint32_t height, const bool checkerboard)
 	{
-		if (m_targets.width == width && m_targets.height == height && m_targets.checkerboard == checkerboard && m_targets.trace_fb)
+		auto& current = m_gpu.targets;
+		if (current.width == width && current.height == height && current.checkerboard == checkerboard && current.trace_fb)
 			return;
 
 		Targets targets;
@@ -239,9 +263,9 @@ namespace clouds
 			targets.history[i] = target(device, Texture::Format::RGBA16F, targets.history_width, targets.history_height, "rml_clouds_history");
 			targets.history_fb[i] = framebuffer(device, {targets.history[i]}, "rml_clouds_history");
 		}
-		m_targets = std::move(targets);
+		current = std::move(targets);
 		m_history_valid = false;
-		m_log->info("Cloud targets {}x{} (trace {}x{}, history {}x{})", width, height, m_targets.trace_width, m_targets.trace_height, m_targets.history_width, m_targets.history_height);
+		m_log->info("Cloud targets {}x{} (trace {}x{}, history {}x{})", width, height, current.trace_width, current.trace_height, current.history_width, current.history_height);
 	}
 
 	void CloudRenderer::update_frame(const CloudSettings& settings, const GlobalShaderData& globals, const Quality& quality, const Texture* depth)
@@ -257,12 +281,16 @@ namespace clouds
 		const Matrix prev_view_proj = m_prev_view_proj ? *m_prev_view_proj : view_proj;
 		const RBX::Vector3 delta = m_prev_view_proj ? camera - m_prev_camera : RBX::Vector3(0, 0, 0);
 
-		RBX::Vector3 wind(settings.wind_direction.x, 0.f, settings.wind_direction.z);
-		wind = wind.length() > 1e-4f ? wind / wind.length() : RBX::Vector3(0, 0, 0);
-		m_shape_offset[0] += wind.x * settings.wind_speed * dt;
-		m_shape_offset[1] += wind.z * settings.wind_speed * dt;
-		m_detail_offset[0] += wind.x * settings.wind_speed * 0.35 * dt;
-		m_detail_offset[1] += wind.z * settings.wind_speed * 0.35 * dt;
+		const RBX::Vector3 velocity = wind_velocity(settings);
+		const float speed = velocity.length();
+		const RBX::Vector3 wind_dir = speed > 1e-4f ? velocity / speed : RBX::Vector3(0, 0, 0);
+		m_shape_offset[0] += velocity.x * dt;
+		m_shape_offset[1] += velocity.z * dt;
+		m_detail_offset[0] += velocity.x * k_detail_drift * dt;
+		m_detail_offset[1] += velocity.z * k_detail_drift * dt;
+		m_shape_evolution += settings.evolution * (3.0 + speed * 0.05) * dt;
+		m_detail_evolution += settings.evolution * (12.0 + speed * 0.2) * dt;
+		const float shear = settings.thickness * k_shear * std::min(speed / 60.f, 1.f);
 
 		RBX::Vector3 sun = -xyz(globals.lamp0_dir);
 		sun = sun.length() > 1e-4f ? sun / sun.length() : RBX::Vector3(0, 1, 0);
@@ -275,12 +303,13 @@ namespace clouds
 		const float ambient = settings.ambient_intensity;
 		const float sun_scale = settings.sun_intensity;
 		const float ms = 0.1f + 0.75f * settings.multi_scattering;
-		const float history_width = static_cast<float>(m_targets.history_width);
-		const float history_height = static_cast<float>(m_targets.history_height);
-		const float trace_width = static_cast<float>(m_targets.trace_width);
-		const float trace_height = static_cast<float>(m_targets.trace_height);
-		const float width = static_cast<float>(m_targets.width);
-		const float height = static_cast<float>(m_targets.height);
+		const auto& targets = m_gpu.targets;
+		const float history_width = static_cast<float>(targets.history_width);
+		const float history_height = static_cast<float>(targets.history_height);
+		const float trace_width = static_cast<float>(targets.trace_width);
+		const float trace_height = static_cast<float>(targets.trace_height);
+		const float width = static_cast<float>(targets.width);
+		const float height = static_cast<float>(targets.height);
 		const auto& pattern = k_pattern[m_frame_index & 3];
 
 		auto& f = m_frame;
@@ -305,9 +334,10 @@ namespace clouds
 		set4(f.screen_size, width, height, 1.f / width, 1.f / height);
 		set4(f.params, static_cast<float>(m_frame_index & 1023), static_cast<float>(quality.steps), static_cast<float>(quality.light_steps), static_cast<float>(quality.octaves));
 		set4(f.temporal, m_history_valid && !cut ? 1.f : 0.f, quality.blend, quality.checkerboard ? static_cast<float>(pattern[0]) : 0.f, quality.checkerboard ? static_cast<float>(pattern[1]) : 0.f);
-		const float depth_width = depth ? static_cast<float>(std::min(depth->width, m_targets.width)) : width;
-		const float depth_height = depth ? static_cast<float>(std::min(depth->height, m_targets.height)) : height;
+		const float depth_width = depth ? static_cast<float>(std::min(depth->width, targets.width)) : width;
+		const float depth_height = depth ? static_cast<float>(std::min(depth->height, targets.height)) : height;
 		set4(f.depth_info, depth_width, depth_height, std::max(settings.horizon_fade * 3.f, 50000.f), quality.checkerboard ? 1.f : 0.f);
+		set4(f.motion, static_cast<float>(m_shape_evolution), static_cast<float>(m_detail_evolution), wind_dir.x * shear, wind_dir.z * shear);
 
 		m_prev_view_proj = view_proj;
 		m_prev_camera = camera;
@@ -316,7 +346,7 @@ namespace clouds
 
 	void CloudRenderer::draw(DeviceContext& context) const
 	{
-		context.draw(m_geometry.get(), Geometry::Primitive::Triangles, 0, 0, 3, 1, 0);
+		context.draw(m_gpu.geometry.get(), Geometry::Primitive::Triangles, 0, 0, 3, 1, 0);
 	}
 
 	void CloudRenderer::run_depth(DeviceContext& context, Texture* depth)
@@ -325,11 +355,11 @@ namespace clouds
 		PassClear clear{};
 		clear.mask = PassClear::Color0;
 		std::fill(std::begin(clear.color[0]), std::end(clear.color[0]), -1.f);
-		context.begin_pass(m_targets.scene_distance_fb.get(), 0, PassClear::Color0, readable ? nullptr : &clear, nullptr, 0);
+		context.begin_pass(m_gpu.targets.scene_distance_fb.get(), 0, PassClear::Color0, readable ? nullptr : &clear, nullptr, 0);
 		if (readable)
 		{
 			context.set_render_state(RasterizerState::make(RasterizerState::Cull_None), BlendState::opaque(), DepthState::make(DepthState::Function_Always, false));
-			context.bind_program((depth->samples > 1 ? m_programs.depth_msaa : m_programs.depth).get());
+			context.bind_program((depth->samples > 1 ? m_gpu.programs.depth_msaa : m_gpu.programs.depth).get());
 			context.bind_texture(0, depth, point_clamp());
 			context.bind_buffer_data(k_frame_slot, &m_frame, k_frame_size);
 			draw(context);
@@ -339,13 +369,14 @@ namespace clouds
 
 	void CloudRenderer::run_trace(DeviceContext& context)
 	{
-		context.begin_pass(m_targets.trace_fb.get(), 0, PassClear::Color0 | PassClear::Color1, nullptr, nullptr, 0);
+		const auto& targets = m_gpu.targets;
+		context.begin_pass(targets.trace_fb.get(), 0, PassClear::Color0 | PassClear::Color1, nullptr, nullptr, 0);
 		context.set_render_state(RasterizerState::make(RasterizerState::Cull_None), BlendState::opaque(), DepthState::make(DepthState::Function_Always, false));
-		context.bind_program(m_programs.trace.get());
-		context.bind_texture(0, m_shape.get(), linear_wrap());
-		context.bind_texture(1, m_detail.get(), linear_wrap());
-		context.bind_texture(2, m_weather.get(), linear_wrap());
-		context.bind_texture(3, m_targets.scene_distance.get(), point_clamp());
+		context.bind_program(m_gpu.programs.trace.get());
+		context.bind_texture(0, m_gpu.shape.get(), linear_wrap());
+		context.bind_texture(1, m_gpu.detail.get(), linear_wrap());
+		context.bind_texture(2, m_gpu.weather.get(), linear_wrap());
+		context.bind_texture(3, targets.scene_distance.get(), point_clamp());
 		context.bind_buffer_data(k_frame_slot, &m_frame, k_frame_size);
 		draw(context);
 		context.end_pass();
@@ -353,14 +384,15 @@ namespace clouds
 
 	void CloudRenderer::run_reconstruct(DeviceContext& context)
 	{
+		const auto& targets = m_gpu.targets;
 		const auto next = m_history_index ^ 1u;
-		context.begin_pass(m_targets.history_fb[next].get(), 0, PassClear::Color0, nullptr, nullptr, 0);
+		context.begin_pass(targets.history_fb[next].get(), 0, PassClear::Color0, nullptr, nullptr, 0);
 		context.set_render_state(RasterizerState::make(RasterizerState::Cull_None), BlendState::opaque(), DepthState::make(DepthState::Function_Always, false));
-		context.bind_program(m_programs.reconstruct.get());
-		context.bind_texture(0, m_targets.trace_color.get(), point_clamp());
-		context.bind_texture(1, m_targets.trace_distance.get(), point_clamp());
-		context.bind_texture(2, m_targets.history[m_history_index].get(), point_clamp());
-		context.bind_texture(3, m_targets.scene_distance.get(), point_clamp());
+		context.bind_program(m_gpu.programs.reconstruct.get());
+		context.bind_texture(0, targets.trace_color.get(), point_clamp());
+		context.bind_texture(1, targets.trace_distance.get(), point_clamp());
+		context.bind_texture(2, targets.history[m_history_index].get(), point_clamp());
+		context.bind_texture(3, targets.scene_distance.get(), point_clamp());
 		context.bind_buffer_data(k_frame_slot, &m_frame, k_frame_size);
 		draw(context);
 		context.end_pass();
@@ -404,15 +436,15 @@ namespace clouds
 			context.end_group();
 			++m_frame_index;
 			m_ready = true;
+			pass.replaces_engine_clouds = true;
 
 			if (!m_active_logged)
 			{
 				m_active_logged = true;
 				const auto& g = *pass.globals;
 				m_log->info("Clouds active: {}x{}, quality {}, depth samples {}", width, height, settings->quality, pass.scene_depth ? pass.scene_depth->samples : 0);
-				m_log->info("Lighting: sun dir ({:.3f}, {:.3f}, {:.3f}) color ({:.3f}, {:.3f}, {:.3f}), outdoor ({:.3f}, {:.3f}, {:.3f}), ambient ({:.3f}, {:.3f}, {:.3f}), fog ({:.3f}, {:.3f}, {:.3f}) params ({:.1f}, {:.1f}, {:.1f}, {:.5f})",
-				    g.lamp0_dir.x, g.lamp0_dir.y, g.lamp0_dir.z, g.lamp0_color.x, g.lamp0_color.y, g.lamp0_color.z, g.outdoor_ambient_color.x, g.outdoor_ambient_color.y, g.outdoor_ambient_color.z,
-				    g.ambient_color.x, g.ambient_color.y, g.ambient_color.z, g.fog_color.x, g.fog_color.y, g.fog_color.z, g.fog_params.x, g.fog_params.y, g.fog_params.z, g.fog_params.w);
+				m_log->info("Lighting: sun dir ({:.3f}, {:.3f}, {:.3f}) color ({:.3f}, {:.3f}, {:.3f}), ambient ({:.3f}, {:.3f}, {:.3f}), fog ({:.3f}, {:.3f}, {:.3f})",
+				    g.lamp0_dir.x, g.lamp0_dir.y, g.lamp0_dir.z, g.lamp0_color.x, g.lamp0_color.y, g.lamp0_color.z, g.ambient_color.x, g.ambient_color.y, g.ambient_color.z, g.fog_color.x, g.fog_color.y, g.fog_color.z);
 			}
 		}
 		catch (const std::exception& e)
@@ -432,13 +464,13 @@ namespace clouds
 		auto& context = *pass.context;
 		const auto raster = RasterizerState::make(RasterizerState::Cull_None);
 		const auto blend = BlendState::make(BlendState::Factor_SrcAlpha, BlendState::Factor_InvSrcAlpha, BlendState::Factor_Zero, BlendState::Factor_One);
-		context.bind_texture(0, m_targets.history[m_history_index].get(), point_clamp());
+		context.bind_texture(0, m_gpu.targets.history[m_history_index].get(), point_clamp());
 		context.bind_buffer_data(k_frame_slot, &m_frame, k_frame_size);
 		context.set_render_state(raster, blend, DepthState::make(DepthState::Function_GreaterEqual, false));
-		context.bind_program(m_programs.composite_sky.get());
+		context.bind_program(m_gpu.programs.composite_sky.get());
 		draw(context);
 		context.set_render_state(raster, blend, DepthState::make(DepthState::Function_Less, false));
-		context.bind_program(m_programs.composite_geometry.get());
+		context.bind_program(m_gpu.programs.composite_geometry.get());
 		draw(context);
 	}
 }
