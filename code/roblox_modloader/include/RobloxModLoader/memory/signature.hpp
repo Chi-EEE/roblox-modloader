@@ -24,6 +24,15 @@ namespace rml::memory
 		{
 		}
 
+		template<std::size_t N, std::size_t M>
+		consteval signature(const char (&name)[N], const char (&ida)[M], const anchor_path& anchor, void (*on_signature_found)(memory::handle ptr)) :
+		    m_name(name),
+		    m_ida(ida),
+		    m_on_signature_found(on_signature_found),
+		    m_anchor(anchor)
+		{
+		}
+
 		template<std::size_t N>
 		consteval signature(const char (&name)[N], const anchor_path& anchor, void (*on_signature_found)(memory::handle ptr)) :
 		    m_name(name),

@@ -22,6 +22,7 @@ namespace rml::memory
 	struct anchor_path
 	{
 		utils::capped_string<128> m_text;
+		utils::capped_string<128> m_also;
 		utils::capped_string<64> m_origin;
 		std::array<anchor_step, 2> m_steps{};
 		std::array<std::uint8_t, 2> m_indices{};
@@ -30,6 +31,14 @@ namespace rml::memory
 		[[nodiscard]] constexpr bool empty() const
 		{
 			return !*m_text.c_str() && !*m_origin.c_str();
+		}
+
+		template<std::size_t N>
+		[[nodiscard]] consteval anchor_path also_referencing(const char (&text)[N]) const
+		{
+			auto next = *this;
+			next.m_also = text;
+			return next;
 		}
 
 		[[nodiscard]] consteval anchor_path call(const std::uint8_t index) const

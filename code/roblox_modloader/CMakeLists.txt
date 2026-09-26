@@ -150,6 +150,11 @@ endif ()
 
 target_compile_features(RobloxModLoader INTERFACE cxx_std_23)
 
+if (MSVC)
+    target_compile_definitions(roblox_modloader PRIVATE "LUA_API=extern __declspec(dllexport)")
+    target_compile_definitions(RobloxModLoader INTERFACE "LUA_API=extern __declspec(dllimport)")
+endif ()
+
 target_compile_definitions(RobloxModLoader INTERFACE
         _CRT_SECURE_NO_WARNINGS
         NOMINMAX

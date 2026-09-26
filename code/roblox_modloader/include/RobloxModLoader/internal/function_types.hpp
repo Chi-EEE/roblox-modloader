@@ -3,6 +3,7 @@
 #include "RobloxModLoader/internal/engine_abi.hpp"
 #include "RobloxModLoader/roblox/reflection/array_view.hpp"
 #include "RobloxModLoader/roblox/reflection/creatable.hpp"
+#include "RobloxModLoader/roblox/reflection/descriptor.hpp"
 #include "RobloxModLoader/roblox/util/standard_out.hpp"
 #include "lua.h"
 #include "lualib.h"
@@ -79,7 +80,7 @@ namespace functions
 	using instance_ctor = void (*)(void* self, const RBX::ForceConstructionInCreatable* force, const char* name);
 	using create_instance_impl = std::shared_ptr<RBX::Instance> (*)(std::uint32_t stable_id, std::size_t size, std::size_t align, std::uint32_t memory_category, void* (*construct)(void* memory, const void* args), const void* args);
 	using property_descriptor_ctor = void (*)(void* self, void* class_descriptor, const void* type, const char* name, const char* category, const void* attributes, std::uint32_t protection_get, std::uint32_t protection_set, bool a9);
-	using function_descriptor_ctor = void (*)(void* self, void* class_descriptor, const char* name, std::uint32_t protection, std::uint64_t attributes_lo, std::uint64_t attributes_hi);
+	using function_descriptor_ctor = void (*)(void* self, void* class_descriptor, const char* name, std::uint32_t protection, RBX::Reflection::Descriptor::Attributes attributes);
 	using event_descriptor_ctor = void (*)(void* self, void* class_descriptor, const char* name, std::uint32_t protection, const void* attributes);
 	using visual_engine_begin_render = RBX::Graphics::DeviceContext* (*)(RBX::Graphics::VisualEngine* self);
 	using scene_manager_render_scene = void (*)(void* self, RBX::Graphics::DeviceContext* context, RBX::Graphics::Framebuffer* target, const void* camera, RBX::ArrayView<RBX::Graphics::Framebuffer*> extra, std::uint32_t capture_mode);

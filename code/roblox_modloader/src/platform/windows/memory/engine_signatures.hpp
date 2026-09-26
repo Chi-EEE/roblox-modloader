@@ -146,6 +146,61 @@ namespace rml
 			        g_pointers->m_roblox_pointers.scene_manager_render_scene = ptr.as<functions::scene_manager_render_scene>();
 		        }
 		    },
+		    {"CLASS_DESCRIPTOR_CTOR",
+		        "48 89 5C 24 18 48 89 54 24 10 48 89 4C 24 08 55 56 57 41 54 41 55 41 56 41 57 48 8B EC 48 83 EC 70 4D 8B D0",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.class_descriptor_ctor = ptr.as<functions::class_descriptor_ctor>();
+		        }
+		    },
+		    {"CLASS_DESCRIPTOR_ALL_CLASSES",
+		        memory::from("CLASS_DESCRIPTOR_CTOR").call_from_end(1),
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.class_descriptor_all_classes = ptr.as<functions::class_descriptor_all_classes>();
+		        }
+		    },
+		    {"CREATABLE_GET_CREATOR",
+		        "48 89 5C 24 08 57 48 83 EC 20 48 8B D9 E8 ? ? ? ? 33 FF 4C",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.creatable_get_creator = ptr.as<functions::creatable_get_creator>();
+		        }
+		    },
+		    {"CREATABLE_CREATE_INSTANCE_IMPL",
+		        "48 89 5C 24 08 48 89 74 24 10 48 89 7C 24 18 4C 89 4C 24 20 55 41 54 41 55 41 56 41 57 48 8D 6C 24 E1 48 81 EC 90 00 00 00 49",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.create_instance_impl = ptr.as<functions::create_instance_impl>();
+		        }
+		    },
+		    {"INSTANCE_CTOR",
+		        memory::referencing("instance_count/instance").also_referencing("FlyweightCtor"),
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.instance_ctor = ptr.as<functions::instance_ctor>();
+		        }
+		    },
+		    {"NAME_DECLARE",
+		        "40 53 48 83 EC 20 48 8B 05 ? ? ? ? 48 8B D9 48 85 C0 75 05 E8 ? ? ? ? 48 8B D3",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.name_declare = ptr.as<functions::name_declare>();
+		        }
+		    },
+		    {"PROPERTY_DESCRIPTOR_CTOR",
+		        "48 89 5C 24 08 48 89 74 24 10 57 48 83 EC 30 48 8B 44 24 70 4D",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.property_descriptor_ctor = ptr.as<functions::property_descriptor_ctor>();
+		        }
+		    },
+		    {"FUNCTION_DESCRIPTOR_CTOR",
+		        "40 53 48 83 EC 30 48 8B 44 24 60 48 8B D9 4C 89 4C 24 28 4C 8D 0D ? ? ? ? 48 89 44 24 20 E8 ? ? ? ? 48 8D 05 ? ? ? ? 48 89 03 33 C0 48 89 43 48 48 89 43 50 48 89 43 58 48 89 43 60 48 89 43 68 48 89 43 70 89",
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.function_descriptor_ctor = ptr.as<functions::function_descriptor_ctor>();
+		        }
+		    },
+		    {"EVENT_DESCRIPTOR_CTOR",
+		        "40 53 48 83 EC 30 48 8B 44 24 60 48 8B D9 4C 89 4C 24 28 4C 8D 0D ? ? ? ? 48 89 44 24 20 E8 ? ? ? ? 48 8D 05 ? ? ? ? 48 89 03 33 C0 48 89 43 48 48 89 43 50 48 89 43 58 48 89 43 60 48 89 43 68 48 89 43 70 48 8B C3 48 83 C4 30 5B C3",
+		        memory::referencing("Signals"),
+		        [](const memory::handle ptr) {
+			        g_pointers->m_roblox_pointers.event_descriptor_ctor = ptr.as<functions::event_descriptor_ctor>();
+		        }
+		    },
 		    {"SIGNAL_SLOT_FREE",
 		        "48 89 5C 24 10 48 89 74 24 18 57 48 83 EC 20 48 8B D9 E8 ? ? ? ? 48 8D 50 10 BF FF FF FF FF 48 3B DA 0F 82",
 		        [](const memory::handle ptr) {

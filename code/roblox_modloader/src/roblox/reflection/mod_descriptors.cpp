@@ -169,7 +169,7 @@ namespace rml::reflection
 		std::memset(member.storage.get(), 0, k_member_storage);
 
 		auto* bytes = member.storage.get();
-		p.function_descriptor_ctor(bytes, owner_storage, name.c_str(), k_protection_none, 0, 0);
+		p.function_descriptor_ctor(bytes, owner_storage, name.c_str(), k_protection_none, RBX::Reflection::Descriptor::Attributes{});
 		*reinterpret_cast<void**>(bytes) = function_carrier_vtable();
 
 		{

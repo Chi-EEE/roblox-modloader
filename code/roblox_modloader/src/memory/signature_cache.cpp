@@ -185,8 +185,11 @@ namespace rml::memory
 			std::vector<std::string_view> texts;
 			for (const auto& entry : entries)
 			{
-				if (*entry.m_anchor.m_text.c_str())
-					texts.emplace_back(entry.m_anchor.m_text.c_str());
+				for (const std::string_view text : {entry.m_anchor.m_text.view(), entry.m_anchor.m_also.view()})
+				{
+					if (!text.empty() && std::ranges::find(texts, text) == texts.end())
+						texts.emplace_back(text);
+				}
 			}
 			auto references = std::async(std::launch::async, [&texts] {
 				return functions_referencing_strings(texts);
@@ -235,6 +238,35 @@ namespace rml::memory
 			return found_all;
 		}
 
+		static const std::vector<AnchoredFunction>& referencing_text(const std::string_view text, const std::vector<std::string_view>& texts, const std::vector<std::vector<AnchoredFunction>>& referencing)
+		{
+			return referencing[std::ranges::find(texts, text) - texts.begin()];
+		}
+
+		static std::vector<AnchoredFunction> anchor_candidates(const signature& entry, const std::vector<std::string_view>& texts, const std::vector<std::vector<AnchoredFunction>>& referencing)
+		{
+			auto candidates = referencing_text(entry.m_anchor.m_text.view(), texts, referencing);
+
+			if (const auto also = entry.m_anchor.m_also.view(); !also.empty())
+			{
+				const auto& others = referencing_text(also, texts, referencing);
+				std::erase_if(candidates, [&](const AnchoredFunction& function) {
+					return std::ranges::none_of(others, [&](const AnchoredFunction& other) { return other.start == function.start; });
+				});
+			}
+
+			if (const auto ida = entry.m_ida.view(); !ida.empty())
+			{
+				const pattern prologue(ida);
+				std::erase_if(candidates, [&](const AnchoredFunction& function) {
+					const auto hit = range(handle(function.start), function.size).scan(prologue);
+					return !hit || hit->as<void*>() != function.start;
+				});
+			}
+
+			return candidates;
+		}
+
 		static bool resolve_anchored(std::span<const signature> entries, const std::vector<std::string_view>& texts, const std::vector<std::vector<AnchoredFunction>>& referencing, const std::unordered_map<std::string_view, void*>& resolved, const auto& record)
 		{
 			std::vector<const signature*> pending;
@@ -256,13 +288,12 @@ namespace rml::memory
 
 					if (*path.m_text.c_str())
 					{
-						const auto& functions =
-						    referencing[std::ranges::find(texts, std::string_view(path.m_text.c_str())) - texts.begin()];
-						if (functions.size() == 1)
-							origin = functions.front().start;
+						const auto candidates = anchor_candidates(entry, texts, referencing);
+						if (candidates.size() == 1)
+							origin = candidates.front().start;
 						else
 							origin = std::unexpected(
-							    std::format("{} functions reference \"{}\"", functions.size(), path.m_text.c_str()));
+							    std::format("{} functions reference \"{}\"", candidates.size(), path.m_text.c_str()));
 					}
 					else if (const auto found = resolved.find(path.m_origin.c_str()); found != resolved.end())
 					{

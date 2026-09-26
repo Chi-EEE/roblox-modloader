@@ -55,6 +55,7 @@ namespace rml::memory
 		{
 			hash = utils::fnv1a_32(sig.m_ida.view(), hash);
 			hash = utils::fnv1a_32(sig.m_anchor.m_text.view(), hash);
+			hash = utils::fnv1a_32(sig.m_anchor.m_also.view(), hash);
 			hash = utils::fnv1a_32(sig.m_anchor.m_origin.view(), hash);
 			for (std::uint8_t i = 0; i < sig.m_anchor.m_step_count; ++i)
 				hash = (hash ^ ((static_cast<uint32_t>(sig.m_anchor.m_steps[i]) << 8) | sig.m_anchor.m_indices[i])) * utils::fnv32_prime;
