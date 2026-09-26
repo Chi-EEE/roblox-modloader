@@ -13,9 +13,9 @@ float4 ReconstructPS(float4 position : SV_Position) : SV_Target
     bool fresh = !checker || all((hp & 1) == offset);
     int2 limit = int2(TraceSize.xy) - 1;
 
-    float4 lo = 1e30;
-    float4 hi = -1e30;
-    float4 nearest = float4(0, 0, 0, 1);
+    float4 sum = 0;
+    float4 sumSquares = 0;
+    float count = 0;
     float nearestDistance = DepthInfo.z;
     float best = 1e30;
     [unroll] for (int y = -1; y <= 1; ++y)
@@ -27,29 +27,40 @@ float4 ReconstructPS(float4 position : SV_Position) : SV_Target
             if (IsSky(c.a) != sky)
                 continue;
             float4 v = float4(c.rgb, DecodeT(c.a));
-            lo = min(lo, v);
-            hi = max(hi, v);
+            sum += v;
+            sumSquares += v * v;
+            count += 1;
             float2 center = checker ? float2(q * 2 + offset) : float2(q);
             float d2 = dot(center - hp, center - hp);
             if (d2 < best)
             {
                 best = d2;
-                nearest = v;
                 nearestDistance = TraceDist.Load(int3(q, 0));
             }
         }
     }
-    if (best >= 1e30)
+
+    float4 current;
+    float2 traceUV = (float2(hp - (checker ? offset : 0)) * (checker ? 0.5 : 1) + 0.5) * TraceSize.zw;
+    if (!ClassBilinear(TraceColor, traceUV, TraceSize.xy, sky, current))
     {
-        int2 q = clamp(tp, 0, limit);
-        float4 c = TraceColor.Load(int3(q, 0));
-        nearest = float4(c.rgb, DecodeT(c.a));
-        nearestDistance = TraceDist.Load(int3(q, 0));
-        lo = nearest;
-        hi = nearest;
+        float4 c = TraceColor.Load(int3(clamp(tp, 0, limit), 0));
+        current = count > 0 ? sum / count : float4(c.rgb, DecodeT(c.a));
+        nearestDistance = TraceDist.Load(int3(clamp(tp, 0, limit), 0));
+    }
+    if (fresh)
+    {
+        float4 c = TraceColor.Load(int3(clamp(tp, 0, limit), 0));
+        if (IsSky(c.a) == sky)
+            current = float4(c.rgb, DecodeT(c.a));
     }
 
-    float4 result = nearest;
+    float4 mean = count > 0 ? sum / count : current;
+    float4 sigma = count > 0 ? sqrt(max(sumSquares / count - mean * mean, 0)) : 0;
+    float4 lo = min(mean - sigma * 1.5 - 0.004, current);
+    float4 hi = max(mean + sigma * 1.5 + 0.004, current);
+
+    float4 result = current;
     if (Temporal.x > 0)
     {
         float3 dir = ViewRay((hp + 0.5) * HistorySize.zw);
@@ -61,7 +72,7 @@ float4 ReconstructPS(float4 position : SV_Position) : SV_Target
             if (all(uv >= 0) && all(uv <= 1) && ClassBilinear(HistoryColor, uv, HistorySize.xy, sky, history))
             {
                 float4 clamped = clamp(history, lo, hi);
-                result = fresh ? lerp(clamped, nearest, Temporal.y) : clamped;
+                result = lerp(clamped, current, fresh ? Temporal.y : Temporal.y * 0.25);
             }
         }
     }

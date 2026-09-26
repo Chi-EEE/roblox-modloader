@@ -9,7 +9,7 @@ namespace clouds
 	struct CloudSettings
 	{
 		bool enabled{true};
-		float coverage{0.55f};
+		float coverage{0.45f};
 		float density{0.4f};
 		float cloud_type{0.75f};
 		float shape_factor{0.9f};

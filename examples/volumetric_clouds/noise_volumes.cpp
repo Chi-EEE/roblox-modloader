@@ -11,7 +11,7 @@
 namespace clouds
 {
 	static constexpr std::uint32_t k_cache_magic = 0x434C4D52;
-	static constexpr std::uint32_t k_cache_version = 1;
+	static constexpr std::uint32_t k_cache_version = 2;
 
 	static std::uint32_t hash(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z, const std::uint32_t salt)
 	{
@@ -176,6 +176,31 @@ namespace clouds
 		return result;
 	}
 
+	static void stretch(std::vector<std::uint8_t>& texels, const std::uint32_t channels)
+	{
+		for (std::uint32_t c = 0; c < channels; ++c)
+		{
+			std::array<std::size_t, 256> histogram{};
+			for (std::size_t i = c; i < texels.size(); i += channels)
+				++histogram[texels[i]];
+
+			const auto count = texels.size() / channels;
+			std::size_t seen = 0;
+			int low = 0;
+			while (low < 255 && (seen += histogram[low]) < count / 100)
+				++low;
+			seen = 0;
+			int high = 255;
+			while (high > low && (seen += histogram[high]) < count / 100)
+				--high;
+			if (high <= low)
+				continue;
+
+			for (std::size_t i = c; i < texels.size(); i += channels)
+				texels[i] = to_byte(static_cast<float>(texels[i] - low) / static_cast<float>(high - low));
+		}
+	}
+
 	static NoiseTexture build(const std::uint32_t size, const std::uint32_t depth, const std::uint32_t channels, const std::function<void(float, float, float, std::uint8_t*)>& texel)
 	{
 		NoiseTexture texture{size, depth, channels, {}};
@@ -190,6 +215,7 @@ namespace clouds
 					texel(u, v, w, &base[((static_cast<std::size_t>(z) * size + y) * size + x) * channels]);
 				}
 		});
+		stretch(base, channels);
 		texture.mips.push_back(std::move(base));
 		for (auto level_size = size, level_depth = depth; level_size > 1 || level_depth > 1;)
 		{

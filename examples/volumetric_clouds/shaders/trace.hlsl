@@ -122,11 +122,11 @@ float LightOpticalDepth(float3 pos, float hf, float mip, float jitter)
     [loop] for (int j = 0; j < steps; ++j)
     {
         float3 p = pos + SunDir.xyz * (stepLen * (j + jitter));
-        density += SampleDensity(p, saturate((p.y - Layer.x) * Layer.w), mip + j * 0.5, false);
+        density += SampleDensity(p, saturate((p.y - Layer.x) * Layer.w), mip + j * 0.5, j < 2);
     }
     float3 far = pos + SunDir.xyz * (dist + Layer.z * 0.5);
     float farDensity = SampleDensity(far, saturate((far.y - Layer.x) * Layer.w), mip + 2, false);
-    return (density * stepLen + farDensity * Layer.z * 0.25) * Shape.y;
+    return (density * stepLen + farDensity * Layer.z * 0.25) * Shape.y * 1.5;
 }
 
 float InterleavedGradientNoise(float2 p)

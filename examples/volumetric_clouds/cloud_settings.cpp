@@ -45,7 +45,7 @@ namespace clouds
 		}
 		else if (name == "Cloudy")
 		{
-			coverage = 0.55f;
+			coverage = 0.45f;
 			density = 0.4f;
 			cloud_type = 0.75f;
 			shape_factor = 0.9f;

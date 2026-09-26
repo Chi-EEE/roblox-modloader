@@ -3,7 +3,8 @@ Texture2D<float4> CloudColor : register(t0);
 float3 Tonemap(float3 x)
 {
     x *= SunColor.w;
-    return saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+    float3 shoulder = 0.6 + 0.4 * (1 - exp(-(x - 0.6) * 2.5));
+    return x < 0.6 ? x : shoulder;
 }
 
 float4 CompositePS(float4 position : SV_Position) : SV_Target
@@ -23,5 +24,5 @@ float4 CompositePS(float4 position : SV_Position) : SV_Target
     float alpha = saturate(1 - value.a);
     if (alpha < 0.002)
         discard;
-    return float4(pow(Tonemap(value.rgb / alpha), 1 / 2.2), alpha);
+    return float4(sqrt(saturate(Tonemap(value.rgb / alpha))), alpha);
 }
