@@ -212,7 +212,7 @@ namespace rml::memory
 				if (entry.anchored())
 					continue;
 
-				futures.emplace_back(std::async(std::launch::async, [&, entry]() -> bool {
+				futures.emplace_back(std::async(std::launch::async, [&]() -> bool {
 					const auto result = region.scan(entry.m_ida.c_str());
 					if (!result.has_value())
 					{
