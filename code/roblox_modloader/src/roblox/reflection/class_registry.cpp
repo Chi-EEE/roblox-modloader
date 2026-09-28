@@ -12,6 +12,7 @@
 #include "app/init_gate.hpp"
 #include "pointers.hpp"
 
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 
@@ -85,6 +86,24 @@ namespace rml::reflection
 				return *descriptor->memory_category;
 		}
 		return 0;
+	}
+
+	static std::expected<void, std::string> check_hints(const std::string& owner, const PropertySpec& property)
+	{
+		const auto& slider = property.hints.slider;
+		if (!slider)
+			return {};
+		if (!std::isfinite(slider->min) || !std::isfinite(slider->max) || slider->min >= slider->max)
+			return std::unexpected(std::format("{}.{}: a slider needs finite bounds with min < max (got {} and {})", owner, property.name, slider->min, slider->max));
+		if (slider->ticks < 0)
+			return std::unexpected(std::format("{}.{}: slider ticks must not be negative (got {})", owner, property.name, slider->ticks));
+		return {};
+	}
+
+	static void apply_descriptor_hints(const PropertySpec& property, std::byte* storage)
+	{
+		if (property.hints.deprecated)
+			reinterpret_cast<RBX::Reflection::Descriptor*>(storage)->attributes.is_deprecated = true;
 	}
 
 	ClassRegistry& ClassRegistry::instance()
@@ -217,6 +236,12 @@ namespace rml::reflection
 
 		for (const auto& property : spec.properties)
 		{
+			if (auto checked = check_hints(spec.name, property); !checked)
+			{
+				m_classes.pop_back();
+				return std::unexpected(checked.error());
+			}
+
 			auto member = make_property(entry.storage.get(), property.name, property.category, property.type, property.accessor.get());
 			if (!member)
 			{
@@ -224,6 +249,7 @@ namespace rml::reflection
 				return std::unexpected(member.error());
 			}
 
+			apply_descriptor_hints(property, member->storage.get());
 			entry.property_table.push_back(reinterpret_cast<const RBX::Reflection::PropertyDescriptor*>(member->storage.get()));
 			entry.member_storage.push_back(std::move(member->storage));
 			entry.accessors.push_back(property.accessor);
@@ -319,6 +345,12 @@ namespace rml::reflection
 
 		for (const auto& property : spec.properties)
 		{
+			if (auto checked = check_hints(spec.name, property); !checked)
+			{
+				m_extensions.pop_back();
+				return std::unexpected(checked.error());
+			}
+
 			auto member = make_property(descriptor, property.name, property.category, property.type, property.accessor.get());
 			if (!member)
 			{
@@ -326,6 +358,7 @@ namespace rml::reflection
 				return std::unexpected(member.error());
 			}
 
+			apply_descriptor_hints(property, member->storage.get());
 			entry.property_table.push_back(reinterpret_cast<const RBX::Reflection::PropertyDescriptor*>(member->storage.get()));
 			entry.member_storage.push_back(std::move(member->storage));
 			entry.accessors.push_back(property.accessor);
@@ -433,9 +466,9 @@ namespace rml::reflection
 	ClassBuilder::ClassBuilder(ClassBuilder&&) noexcept = default;
 	ClassBuilder& ClassBuilder::operator=(ClassBuilder&&) noexcept = default;
 
-	ClassBuilder& ClassBuilder::property(std::string_view name, const PropertyType type, std::shared_ptr<void> accessor, std::string_view category)
+	ClassBuilder& ClassBuilder::property(std::string_view name, const PropertyType type, std::shared_ptr<void> accessor)
 	{
-		m_spec->properties.push_back(PropertySpec{std::string(name), std::string(category), type, std::move(accessor)});
+		m_spec->properties.push_back(PropertySpec{std::string(name), "Data", type, std::move(accessor), {}});
 		return *this;
 	}
 
@@ -448,6 +481,55 @@ namespace rml::reflection
 	ClassBuilder& ClassBuilder::event(std::string_view name, const std::ptrdiff_t member_offset, std::vector<EventArgument> arguments)
 	{
 		m_spec->events.push_back(EventSpec{std::string(name), member_offset, std::move(arguments)});
+		return *this;
+	}
+
+	PropertyOptions ClassBuilder::last_property()
+	{
+		if (m_spec->properties.empty())
+			throw std::logic_error("property options requested before any property was added");
+		return PropertyOptions(m_spec->properties, m_spec->properties.size() - 1);
+	}
+
+	ClassBuilder& ClassBuilder::description(const std::string_view text)
+	{
+		m_spec->hints.description = std::string(text);
+		return *this;
+	}
+
+	ClassBuilder& ClassBuilder::insert_category(const std::string_view name)
+	{
+		m_spec->hints.insert_category = std::string(name);
+		return *this;
+	}
+
+	ClassBuilder& ClassBuilder::explorer_order(const int value)
+	{
+		m_spec->hints.explorer_order = value;
+		return *this;
+	}
+
+	ClassBuilder& ClassBuilder::preferred_parent(const std::string_view class_name)
+	{
+		m_spec->hints.preferred_parent = std::string(class_name);
+		return *this;
+	}
+
+	ClassBuilder& ClassBuilder::insertable(const bool value)
+	{
+		m_spec->hints.insertable = value;
+		return *this;
+	}
+
+	ClassBuilder& ClassBuilder::browsable(const bool value)
+	{
+		m_spec->hints.browsable = value;
+		return *this;
+	}
+
+	ClassBuilder& ClassBuilder::icon_of(const std::string_view engine_class)
+	{
+		m_spec->hints.icon_of = std::string(engine_class);
 		return *this;
 	}
 
@@ -487,9 +569,9 @@ namespace rml::reflection
 	ExtensionBuilder::ExtensionBuilder(ExtensionBuilder&&) noexcept = default;
 	ExtensionBuilder& ExtensionBuilder::operator=(ExtensionBuilder&&) noexcept = default;
 
-	ExtensionBuilder& ExtensionBuilder::property(std::string_view name, const PropertyType type, std::shared_ptr<void> accessor, std::string_view category)
+	ExtensionBuilder& ExtensionBuilder::property(std::string_view name, const PropertyType type, std::shared_ptr<void> accessor)
 	{
-		m_spec->properties.push_back(PropertySpec{std::string(name), std::string(category), type, std::move(accessor)});
+		m_spec->properties.push_back(PropertySpec{std::string(name), "Data", type, std::move(accessor), {}});
 		return *this;
 	}
 
@@ -499,11 +581,67 @@ namespace rml::reflection
 		return *this;
 	}
 
+	PropertyOptions ExtensionBuilder::last_property()
+	{
+		if (m_spec->properties.empty())
+			throw std::logic_error("property options requested before any property was added");
+		return PropertyOptions(m_spec->properties, m_spec->properties.size() - 1);
+	}
+
 	const RBX::Reflection::ClassDescriptor* ExtensionBuilder::commit()
 	{
 		auto result = ClassRegistry::instance().extend(*m_spec);
 		if (!result)
 			throw std::logic_error(result.error());
 		return *result;
+	}
+}
+
+namespace rml::reflection
+{
+	PropertyOptions::PropertyOptions(std::vector<PropertySpec>& properties, const std::size_t index) :
+	    m_properties(&properties),
+	    m_index(index)
+	{
+	}
+
+	PropertySpec& PropertyOptions::spec() const
+	{
+		return (*m_properties)[m_index];
+	}
+
+	void PropertyOptions::category(const std::string_view name) const
+	{
+		spec().category = std::string(name);
+	}
+
+	void PropertyOptions::description(const std::string_view text) const
+	{
+		spec().hints.description = std::string(text);
+	}
+
+	void PropertyOptions::order(const int value) const
+	{
+		spec().hints.order = value;
+	}
+
+	void PropertyOptions::read_only() const
+	{
+		spec().hints.read_only = true;
+	}
+
+	void PropertyOptions::hidden() const
+	{
+		spec().hints.hidden = true;
+	}
+
+	void PropertyOptions::deprecated(const std::string_view message) const
+	{
+		spec().hints.deprecated = std::string(message);
+	}
+
+	void PropertyOptions::slider(const double min, const double max, const int ticks, const SliderScaling scaling) const
+	{
+		spec().hints.slider = Slider{min, max, ticks, scaling};
 	}
 }
