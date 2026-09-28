@@ -120,10 +120,7 @@ namespace rml
 		}
 
 		if (const auto device_destructor = graphics::device_destructor_target())
-		{
 			DetourHookHelper::add<Hooks::device_destroy>("DEVICE_DESTROY", device_destructor);
-			graphics::GraphicsRegistry::instance().set_device_teardown_available(true);
-		}
 
 		if (const auto pre_submit_pass = graphics::adorn_render_pre_submit_pass_target())
 			DetourHookHelper::add<Hooks::adorn_render_pre_submit_pass>("ADORN_RENDER_PRE_SUBMIT_PASS", pre_submit_pass);

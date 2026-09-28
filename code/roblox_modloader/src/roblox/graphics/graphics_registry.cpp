@@ -67,66 +67,8 @@ namespace rml::graphics
 		m_frame.fetch_add(1, std::memory_order_acq_rel);
 	}
 
-	RenderCallbackId GraphicsRegistry::add_render_callback(const RenderStage stage, RenderCallback callback)
-	{
-		const auto id = m_next_callback_id.fetch_add(1, std::memory_order_relaxed);
-		std::lock_guard lock(m_callbacks_mutex);
-		m_callbacks.push_back({id, stage, std::move(callback), 0});
-		if (stage == RenderStage::PostOpaque)
-			m_post_opaque_callbacks.fetch_add(1, std::memory_order_release);
-		return id;
-	}
-
-	void GraphicsRegistry::remove_render_callback(const RenderCallbackId id)
-	{
-		std::lock_guard lock(m_callbacks_mutex);
-		std::erase_if(m_callbacks, [this, id](const Entry& entry) {
-			if (entry.id != id)
-				return false;
-			if (entry.stage == RenderStage::PostOpaque)
-				m_post_opaque_callbacks.fetch_sub(1, std::memory_order_release);
-			return true;
-		});
-		std::erase_if(m_device_callbacks, [id](const auto& entry) { return entry.first == id; });
-	}
-
-	RenderCallbackId GraphicsRegistry::add_device_teardown_callback(DeviceCallback callback)
-	{
-		if (!m_device_teardown_available.load(std::memory_order_acquire))
-			return 0;
-		const auto id = m_next_callback_id.fetch_add(1, std::memory_order_relaxed);
-		std::lock_guard lock(m_callbacks_mutex);
-		m_device_callbacks.emplace_back(id, std::move(callback));
-		return id;
-	}
-
-	void GraphicsRegistry::set_device_teardown_available(const bool available)
-	{
-		m_device_teardown_available.store(available, std::memory_order_release);
-		RML_INFO("Device teardown notifications {}", available ? "enabled" : "disabled");
-	}
-
 	void GraphicsRegistry::on_device_destroyed(RBX::Graphics::Device* device)
 	{
-		{
-			std::lock_guard lock(m_callbacks_mutex);
-			for (const auto& [id, callback] : m_device_callbacks)
-			{
-				try
-				{
-					callback(*device);
-				}
-				catch (const std::exception& e)
-				{
-					RML_ERROR("device teardown callback threw: {}", e.what());
-				}
-				catch (...)
-				{
-					RML_ERROR("device teardown callback threw an unknown exception");
-				}
-			}
-		}
-
 		auto* expected = device;
 		if (m_device.compare_exchange_strong(expected, nullptr, std::memory_order_acq_rel))
 		{
@@ -134,113 +76,6 @@ namespace rml::graphics
 			m_scene_manager.store(nullptr, std::memory_order_release);
 			RML_INFO("Device 0x{:X} destroyed", reinterpret_cast<std::uintptr_t>(device));
 		}
-	}
-
-	std::size_t GraphicsRegistry::run_render_callbacks(RenderPassContext& context)
-	{
-		std::size_t invoked = 0;
-		std::lock_guard lock(m_callbacks_mutex);
-		for (auto it = m_callbacks.begin(); it != m_callbacks.end();)
-		{
-			if (it->stage != context.stage)
-			{
-				++it;
-				continue;
-			}
-
-			++invoked;
-			try
-			{
-				it->callback(context);
-				++it;
-				continue;
-			}
-			catch (const std::exception& e)
-			{
-				RML_ERROR("render callback threw: {}", e.what());
-			}
-			catch (...)
-			{
-				RML_ERROR("render callback threw an unknown exception");
-			}
-
-			if (++it->failures >= k_max_callback_failures)
-			{
-				RML_ERROR("render callback removed after {} failures", it->failures);
-				if (it->stage == RenderStage::PostOpaque)
-					m_post_opaque_callbacks.fetch_sub(1, std::memory_order_release);
-				it = m_callbacks.erase(it);
-			}
-			else
-			{
-				++it;
-			}
-		}
-		return invoked;
-	}
-
-	bool GraphicsRegistry::has_render_callbacks(const RenderStage stage)
-	{
-		std::lock_guard lock(m_callbacks_mutex);
-		return std::ranges::any_of(m_callbacks, [stage](const Entry& entry) { return entry.stage == stage; });
-	}
-
-	unsigned GraphicsRegistry::on_begin_pass(RBX::Graphics::Framebuffer* framebuffer, unsigned store_mask, const RBX::Graphics::PassResolve* resolve, const unsigned flags)
-	{
-		const bool resolves = resolve && resolve->mask != 0;
-		if (resolves && m_post_opaque_callbacks.load(std::memory_order_acquire) > 0)
-			store_mask |= resolve->mask;
-		m_open_pass = {framebuffer, store_mask, flags, resolves, resolves ? *resolve : RBX::Graphics::PassResolve{}};
-		return store_mask;
-	}
-
-	const OpenPass* GraphicsRegistry::open_pass(const RBX::Graphics::Framebuffer* framebuffer) const
-	{
-		return m_open_pass.framebuffer == framebuffer ? &m_open_pass : nullptr;
-	}
-
-	void GraphicsRegistry::begin_scene(RBX::Graphics::SceneManager* scene_manager, const bool engine_clouds, const std::uint32_t capture_mode)
-	{
-		set_scene_manager(scene_manager);
-		m_engine_clouds.store(engine_clouds, std::memory_order_release);
-		m_engine_clouds_replaced.store(false, std::memory_order_release);
-		m_capture_mode.store(capture_mode, std::memory_order_release);
-	}
-
-	void GraphicsRegistry::set_sky_stage_available(const bool available)
-	{
-		m_sky_stage_available.store(available, std::memory_order_release);
-	}
-
-	void GraphicsRegistry::set_sky_stage_enabled(const bool enabled)
-	{
-		if (m_sky_stage_enabled.exchange(enabled, std::memory_order_acq_rel) != enabled)
-			RML_INFO("Sky stage {}", enabled ? "enabled" : "disabled");
-	}
-
-	void GraphicsRegistry::set_engine_clouds_replaced(const bool replaced)
-	{
-		m_engine_clouds_replaced.store(replaced, std::memory_order_release);
-	}
-
-	bool GraphicsRegistry::sky_stage_forced() const
-	{
-		return m_sky_stage_available.load(std::memory_order_acquire) && m_sky_stage_enabled.load(std::memory_order_acquire);
-	}
-
-	bool GraphicsRegistry::engine_clouds_enabled() const
-	{
-		return m_engine_clouds.load(std::memory_order_acquire);
-	}
-
-	bool GraphicsRegistry::engine_clouds_replaced() const
-	{
-		return m_engine_clouds_replaced.load(std::memory_order_acquire);
-	}
-
-	std::uint32_t GraphicsRegistry::capture_mode() const
-	{
-		return m_capture_mode.load(std::memory_order_acquire);
 	}
 
 	void GraphicsRegistry::add_adorn_callback(AdornCallback callback)
@@ -509,30 +344,5 @@ namespace rml::graphics
 	std::vector<RBX::Graphics::AdornRender*> adorn_renders()
 	{
 		return GraphicsRegistry::instance().adorn_renders();
-	}
-
-	void add_render_callback(RenderCallback callback)
-	{
-		GraphicsRegistry::instance().add_render_callback(RenderStage::Scene, std::move(callback));
-	}
-
-	RenderCallbackId add_render_callback(const RenderStage stage, RenderCallback callback)
-	{
-		return GraphicsRegistry::instance().add_render_callback(stage, std::move(callback));
-	}
-
-	void remove_render_callback(const RenderCallbackId id)
-	{
-		GraphicsRegistry::instance().remove_render_callback(id);
-	}
-
-	void set_sky_stage_enabled(const bool enabled)
-	{
-		GraphicsRegistry::instance().set_sky_stage_enabled(enabled);
-	}
-
-	RenderCallbackId add_device_teardown_callback(DeviceCallback callback)
-	{
-		return GraphicsRegistry::instance().add_device_teardown_callback(std::move(callback));
 	}
 }
