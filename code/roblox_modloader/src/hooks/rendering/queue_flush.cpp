@@ -13,7 +13,7 @@ static void queue_flush(const std::optional<rml::render::QueueGroup> group, cons
 		return;
 	}
 	auto& dispatch = rml::render::detail::InjectionDispatch::instance();
-	rml::render::detail::run_queue(*group, dispatch.on_scene_target(), call_original);
+	rml::render::detail::run_queue(*group, dispatch.on_scene_target() || dispatch.on_output_target(), call_original);
 }
 
 void rml::Hooks::render_objects_clipped(RBX::Graphics::DeviceContext* context, void* instance_glob, const void* view, void* group, void* stats, const std::uint32_t tracker, const void* tokens, void* clip, const bool first, const bool second)

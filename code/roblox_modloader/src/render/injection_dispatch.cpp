@@ -114,14 +114,16 @@ namespace rml::render::detail
 
 	void InjectionDispatch::end_view()
 	{
-		if (--m_depth > 0 || !m_frame)
-			return;
-		reach(InjectionPoint::at(FramePoint::FrameEnd));
-		m_graph.end_frame(*m_frame, std::move(m_frame_lock));
-		m_frame.reset();
-		m_scene = nullptr;
-		m_context = nullptr;
-		m_output = nullptr;
+		if (m_depth == 1 && m_frame)
+		{
+			reach(InjectionPoint::at(FramePoint::FrameEnd));
+			m_graph.end_frame(*m_frame, std::move(m_frame_lock));
+			m_frame.reset();
+			m_scene = nullptr;
+			m_context = nullptr;
+			m_output = nullptr;
+		}
+		--m_depth;
 	}
 
 	static bool after_main(const InjectionPoint point)
