@@ -5,6 +5,8 @@
 #include "RobloxModLoader/roblox/job_vtable.hpp"
 #include "RobloxModLoader/roblox/task_scheduler.hpp"
 #include "pointers.hpp"
+#include "render/engine_stages.hpp"
+#include "render/injection_table.hpp"
 #include "roblox/graphics/graphics_registry.hpp"
 
 #include <utility>
@@ -60,9 +62,16 @@ namespace rml
 			DetourHookHelper::add<Hooks::visual_engine_begin_render>("VISUAL_ENGINE_BEGIN_RENDER",
 			    reinterpret_cast<void*>(g_pointers->m_roblox_pointers.visual_engine_begin_render));
 
+		auto& injection_table = render::detail::InjectionTable::instance();
+		auto& engine_stages = render::detail::EngineStages::instance();
+
 		if (g_pointers->m_roblox_pointers.scene_manager_render_scene)
+		{
 			DetourHookHelper::add<Hooks::scene_manager_render_scene>("SCENE_MANAGER_RENDER_SCENE",
 			    reinterpret_cast<void*>(g_pointers->m_roblox_pointers.scene_manager_render_scene));
+			injection_table.resolve(render::InjectionPoint::at(render::FramePoint::FrameBegin));
+			injection_table.resolve(render::InjectionPoint::at(render::FramePoint::FrameEnd));
+		}
 
 		if (const auto& pointers = g_pointers->m_roblox_pointers; pointers.clouds_update && (pointers.clouds_composite || pointers.clouds_composite_clouds))
 		{
@@ -71,11 +80,14 @@ namespace rml
 				DetourHookHelper::add<Hooks::clouds_composite>("CLOUDS_COMPOSITE", reinterpret_cast<void*>(pointers.clouds_composite));
 			else
 				DetourHookHelper::add<Hooks::clouds_composite_clouds>("CLOUDS_COMPOSITE_CLOUDS", reinterpret_cast<void*>(pointers.clouds_composite_clouds));
-			graphics::GraphicsRegistry::instance().set_sky_stage_available(true);
-
-			if (const auto begin_pass = graphics::device_context_begin_pass_target())
-				DetourHookHelper::add<Hooks::device_context_begin_pass>("DEVICE_CONTEXT_BEGIN_PASS", begin_pass);
+			injection_table.resolve(render::InjectionPoint::at(render::FramePoint::CloudsPrepare));
+			injection_table.resolve(render::InjectionPoint::at(render::FramePoint::MainAfterOpaque));
+			injection_table.resolve_stage(render::EngineStage::Clouds);
+			engine_stages.mark_hooked(render::EngineStage::Clouds);
 		}
+
+		if (const auto begin_pass = graphics::device_context_begin_pass_target())
+			DetourHookHelper::add<Hooks::device_context_begin_pass>("DEVICE_CONTEXT_BEGIN_PASS", begin_pass);
 
 		if (const auto device_destructor = graphics::device_destructor_target())
 		{
