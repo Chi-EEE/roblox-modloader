@@ -81,6 +81,48 @@ namespace rml
 				},
 			},
 			{
+				"CLOUDS_UPDATE",
+				"FC 6F BA A9 FA 67 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 7B 05 A9 FD 43 01 91 FF C3 06 D1 ? ? ? ? 08 09 40 F9 08 01 40 F9 A8 03 1A F8 08 2C 43 39 ? ? ? ? F9 03 07 AA FA 03 06 AA",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.clouds_update = ptr.as<functions::clouds_update>();
+				},
+			},
+			{
+				"CLOUDS_COMPOSITE_CLOUDS",
+				"08 2C 43 39 ? ? ? ? C0 03 5F D6 ? ? ? ? ? ? ? ? 08 01 40 39 1F 05 00 71 ? ? ? ? 08 00 40 39 1F 05 00 71 ? ? ? ? E2 03 03 AA E3 03 04 AA ? ? ? ?",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.clouds_composite_clouds = ptr.add(0x34).bl().as<functions::clouds_composite_clouds>();
+				},
+			},
+			{
+				"RENDER_OBJECTS_CLIPPED",
+				"FC 6F BA A9 FA 67 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 7B 05 A9 FD 43 01 91 FF 03 22 D1 E2 27 00 F9 E1 1F 00 F9",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.render_objects_clipped = ptr.as<functions::render_objects_clipped>();
+				},
+			},
+			{
+				"DISPATCH_SCENE_DISPATCH",
+				"48 24 42 A9 29 01 08 CB 29 FD 43 D3 EA B0 96 52 EA 0D AB 72 29 7D 0A 1B",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.dispatch_scene_dispatch = ptr.as<functions::dispatch_scene_dispatch>();
+				},
+			},
+			{
+				"SCENE_MANAGER_RENDER_SKY",
+				"08 B8 41 B9 1F 05 00 71 ? ? ? ? ? ? ? ? 00 1C 43 F9 ? ? ? ?",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.scene_manager_render_sky = ptr.as<functions::scene_manager_render_sky>();
+				},
+			},
+			{
+				"SCENE_MANAGER_RENDER_UI",
+				"E9 23 B9 6D FC 6F 01 A9 FA 67 02 A9 F8 5F 03 A9 F6 57 04 A9 F4 4F 05 A9 FD 7B 06 A9 FD 83 01 91 FF 43 14 D1 FC 03 06 AA",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.scene_manager_render_ui = ptr.as<functions::scene_manager_render_ui>();
+				},
+			},
+			{
 				"PROPERTY_DESCRIPTOR_CTOR",
 				"F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F4 03 07 AA F3 03 05 AA",
 				[](const memory::handle ptr) {

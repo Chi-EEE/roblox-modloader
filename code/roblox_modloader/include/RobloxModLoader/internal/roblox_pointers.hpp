@@ -161,6 +161,11 @@ struct RobloxPointers
 	functions::scene_manager_render_scene scene_manager_render_scene;
 	functions::clouds_update clouds_update;
 	functions::clouds_composite clouds_composite;
+	functions::clouds_composite_clouds clouds_composite_clouds;
+	functions::render_objects_clipped render_objects_clipped;
+	functions::dispatch_scene_dispatch dispatch_scene_dispatch;
+	functions::scene_manager_render_sky scene_manager_render_sky;
+	functions::scene_manager_render_ui scene_manager_render_ui;
 
 	const std::vector<const RBX::Reflection::Type*>* type_registry;
 };

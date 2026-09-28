@@ -30,11 +30,9 @@ namespace clouds
 		};
 
 		Entry* find(const void* owner);
-		void refresh();
 
 		mutable std::mutex m_mutex;
 		std::vector<Entry> m_entries;
 		std::uint64_t m_next_order{1};
-		bool m_any_active{false};
 	};
 }
