@@ -9,8 +9,10 @@ static void composite_stage(const auto& call_original)
 {
 	using namespace rml::render;
 	auto& dispatch = detail::InjectionDispatch::instance();
-	detail::run_stage(EngineStage::Clouds, true, call_original);
-	dispatch.reach(InjectionPoint::at(FramePoint::MainAfterOpaque));
+	const bool inject = dispatch.on_scene_target();
+	detail::run_stage(EngineStage::Clouds, inject, call_original);
+	if (inject)
+		dispatch.reach(InjectionPoint::at(FramePoint::MainAfterOpaque));
 }
 
 void rml::Hooks::clouds_update(void* clouds, RBX::Graphics::DeviceContext* context, void* view_info, const RBX::Graphics::RenderCamera* camera, RBX::Graphics::Framebuffer* main_framebuffer, RBX::Graphics::GlobalShaderData* globals, const void* camera_change, void* stats)
