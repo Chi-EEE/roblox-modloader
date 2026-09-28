@@ -141,7 +141,20 @@ namespace rml::render::detail
 				continue;
 			}
 
-			RML_INFO("added pass '{}' at {}", op.name, to_string(op.pass->get_injection_point()));
+			std::string point;
+			try
+			{
+				point = to_string(op.pass->get_injection_point());
+			}
+			catch (const std::exception& e)
+			{
+				point = std::format("an unknown point ({})", e.what());
+			}
+			catch (...)
+			{
+				point = "an unknown point";
+			}
+			RML_INFO("added pass '{}' at {}", op.name, point);
 			m_entries.push_back({std::move(op.pass), std::move(op.name)});
 		}
 	}
