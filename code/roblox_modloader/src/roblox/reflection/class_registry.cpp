@@ -1,5 +1,6 @@
 #include "class_registry.hpp"
 
+#include "metadata_registry.hpp"
 #include "mod_descriptors.hpp"
 
 #include "RobloxModLoader/memory/foreign_call.hpp"
@@ -104,6 +105,18 @@ namespace rml::reflection
 	{
 		if (property.hints.deprecated)
 			reinterpret_cast<RBX::Reflection::Descriptor*>(storage)->attributes.is_deprecated = true;
+	}
+
+	static void publish_metadata(const std::string& class_name, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties)
+	{
+		ClassMetadata metadata{class_name, owned_class, hints, {}};
+		for (const auto& property : properties)
+		{
+			if (!property.hints.empty())
+				metadata.properties.push_back(PropertyMetadata{property.name, property.hints});
+		}
+		if (!metadata.hints.empty() || !metadata.properties.empty())
+			MetadataRegistry::instance().add(std::move(metadata));
 	}
 
 	ClassRegistry& ClassRegistry::instance()
@@ -298,6 +311,7 @@ namespace rml::reflection
 		m_creators[&entry.descriptor->name] = entry.creator.get();
 		m_by_descriptor[entry.descriptor] = &entry;
 
+		publish_metadata(spec.name, true, spec.hints, spec.properties);
 		RML_INFO("Registered class {} : {} ({} bytes, {} properties, {} functions, {} events, descriptor 0x{:X})", spec.name, spec.base, spec.layout.size,
 		    entry.property_table.size(), entry.function_table.size(), entry.event_table.size(), reinterpret_cast<std::uintptr_t>(entry.descriptor));
 		return entry.descriptor;
@@ -381,6 +395,7 @@ namespace rml::reflection
 		append_members(descriptor, entry.property_table);
 		append_members(descriptor, entry.function_table);
 
+		publish_metadata(spec.name, false, {}, spec.properties);
 		RML_INFO("Extended class {} with {} properties and {} functions", spec.name, entry.property_table.size(), entry.function_table.size());
 		return descriptor;
 	}
