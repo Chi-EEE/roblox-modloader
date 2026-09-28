@@ -15,6 +15,8 @@ RML_LOG_SCOPE("Render");
 
 namespace rml::render::detail
 {
+	static thread_local int t_depth = 0;
+
 	InjectionDispatch& InjectionDispatch::instance()
 	{
 		static InjectionDispatch dispatch;
@@ -51,16 +53,21 @@ namespace rml::render::detail
 
 	bool InjectionDispatch::begin_view(RBX::Graphics::SceneManager& scene, RBX::Graphics::DeviceContext* context, RBX::Graphics::Framebuffer* output, const RBX::Graphics::RenderCamera* camera, const std::uint32_t capture_mode)
 	{
-		if (m_depth++ > 0 || !context)
+		if (t_depth++ > 0 || !context)
+			return false;
+		auto unowned = std::thread::id{};
+		if (!m_owner.compare_exchange_strong(unowned, std::this_thread::get_id(), std::memory_order_acq_rel))
 			return false;
 
 		auto& registry = graphics::GraphicsRegistry::instance();
 		auto* device = registry.validate() ? registry.device() : nullptr;
-		if (!device)
+		if (device)
+			ensure_device(*device);
+		if (!device || !m_fullscreen.geometry)
+		{
+			m_owner.store({}, std::memory_order_release);
 			return false;
-		ensure_device(*device);
-		if (!m_fullscreen.geometry)
-			return false;
+		}
 
 		const auto now = std::chrono::steady_clock::now();
 		const float delta = m_last_time.time_since_epoch().count() == 0 ? 0.f : std::chrono::duration<float>(now - m_last_time).count();
@@ -114,21 +121,30 @@ namespace rml::render::detail
 
 	void InjectionDispatch::end_view()
 	{
-		if (m_depth == 1 && m_frame)
+		if (owns_frame())
 		{
-			reach(InjectionPoint::at(FramePoint::FrameEnd));
-			m_graph.end_frame(*m_frame, std::move(m_frame_lock));
-			m_frame.reset();
-			m_scene = nullptr;
-			m_context = nullptr;
-			m_output = nullptr;
+			if (m_frame)
+			{
+				reach(InjectionPoint::at(FramePoint::FrameEnd));
+				m_graph.end_frame(*m_frame, std::move(m_frame_lock));
+				m_frame.reset();
+				m_scene = nullptr;
+				m_context = nullptr;
+				m_output = nullptr;
+			}
+			m_owner.store({}, std::memory_order_release);
 		}
-		--m_depth;
+		--t_depth;
+	}
+
+	bool InjectionDispatch::owns_frame() const
+	{
+		return t_depth == 1 && m_owner.load(std::memory_order_acquire) == std::this_thread::get_id();
 	}
 
 	static bool after_main(const InjectionPoint point)
 	{
-		return point == InjectionPoint::at(FramePoint::MainAfterOpaque) || point == InjectionPoint::at(FramePoint::UIBefore) || point == InjectionPoint::at(FramePoint::FrameEnd) || (point.kind() == InjectionKind::Stage && point.engine_stage() == EngineStage::UI);
+		return point == InjectionPoint::at(FramePoint::MainAfterOpaque) || point == InjectionPoint::at(FramePoint::UIBefore) || point == InjectionPoint::at(FramePoint::FrameEnd) || (point.kind() == InjectionKind::Stage && point.engine_stage() == EngineStage::UI) || point == InjectionPoint::queue(QueueGroup::Opaque, Side::After);
 	}
 
 	void InjectionDispatch::publish_builtins(const InjectionPoint point, const bool offscreen)
@@ -160,7 +176,7 @@ namespace rml::render::detail
 
 	void InjectionDispatch::reach(const InjectionPoint point)
 	{
-		if (!m_frame || !m_context || m_depth != 1)
+		if (!owns_frame() || !m_frame || !m_context)
 			return;
 
 		InjectionTable::instance().fired(point, m_frame_index);
@@ -218,7 +234,7 @@ namespace rml::render::detail
 
 	bool InjectionDispatch::on_scene_target() const
 	{
-		if (!m_frame || !m_context || !m_scene || m_depth != 1)
+		if (!owns_frame() || !m_frame || !m_context || !m_scene)
 			return false;
 		const auto* targets = m_scene->get_main_render_targets();
 		return targets && targets->scene_fb && m_context->get_framebuffer() == targets->scene_fb.get();
@@ -226,7 +242,7 @@ namespace rml::render::detail
 
 	bool InjectionDispatch::on_output_target() const
 	{
-		return m_frame && m_context && m_output && m_depth == 1 && m_context->get_framebuffer() == m_output;
+		return owns_frame() && m_frame && m_context && m_output && m_context->get_framebuffer() == m_output;
 	}
 
 	bool InjectionDispatch::plans_clouds_path() const

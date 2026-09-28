@@ -7,11 +7,13 @@
 #include "render/pass_suspension.hpp"
 #include "render/render_graph_impl.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -48,6 +50,7 @@ namespace rml::render::detail
 	private:
 		InjectionDispatch() = default;
 
+		[[nodiscard]] bool owns_frame() const;
 		void ensure_device(RBX::Graphics::Device& device);
 		void publish_builtins(InjectionPoint point, bool offscreen);
 		void run(const std::vector<std::size_t>& passes, InjectionPoint point, std::uint32_t occurrence, CommandsImpl::Mode mode);
@@ -65,7 +68,7 @@ namespace rml::render::detail
 		std::unordered_map<std::uint32_t, std::uint32_t> m_occurrences;
 		std::chrono::steady_clock::time_point m_last_time{};
 		std::uint64_t m_frame_index{};
-		int m_depth{};
+		std::atomic<std::thread::id> m_owner{};
 		bool m_main_view_seen{};
 		bool m_main_view_now{};
 		bool m_main_done{};
