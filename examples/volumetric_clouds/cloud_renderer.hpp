@@ -17,6 +17,11 @@
 #include <string>
 #include <string_view>
 
+namespace clouds::shaders
+{
+	struct Source;
+}
+
 namespace clouds
 {
 	using Matrix = std::array<float, 16>;
@@ -121,7 +126,7 @@ namespace clouds
 		void run_trace(RBX::Graphics::DeviceContext& context);
 		void run_reconstruct(RBX::Graphics::DeviceContext& context);
 		void draw(RBX::Graphics::DeviceContext& context) const;
-		std::shared_ptr<RBX::Graphics::ShaderProgram> make_program(RBX::Graphics::Device& device, std::string_view defines, std::string_view pass, std::string_view entry, const std::string& name) const;
+		std::shared_ptr<RBX::Graphics::ShaderProgram> make_program(RBX::Graphics::Device& device, std::string_view defines, const shaders::Source& pass, std::string_view entry, std::uint32_t texture_mask, const std::string& name) const;
 		void release();
 
 		std::shared_ptr<spdlog::logger> m_log;

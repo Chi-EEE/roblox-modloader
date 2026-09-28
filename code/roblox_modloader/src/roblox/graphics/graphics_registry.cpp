@@ -3,6 +3,7 @@
 #include "RobloxModLoader/hooking/vtable_index.hpp"
 #include "RobloxModLoader/memory/vtable.hpp"
 #include "RobloxModLoader/internal/common.hpp"
+#include "RobloxModLoader/memory/instruction.hpp"
 #include "RobloxModLoader/memory/rtti_index.hpp"
 #include "RobloxModLoader/memory/module.hpp"
 #include "RobloxModLoader/memory/string_anchor.hpp"
@@ -10,6 +11,7 @@
 #include "RobloxModLoader/platform/memory/memory_protection.hpp"
 #include "RobloxModLoader/roblox/graphics/adorn_render.hpp"
 #include "RobloxModLoader/roblox/graphics/device.hpp"
+#include "RobloxModLoader/roblox/graphics/device_context.hpp"
 #include "RobloxModLoader/roblox/graphics/shader_manager.hpp"
 #include "RobloxModLoader/util/string.hpp"
 
@@ -70,13 +72,21 @@ namespace rml::graphics
 		const auto id = m_next_callback_id.fetch_add(1, std::memory_order_relaxed);
 		std::lock_guard lock(m_callbacks_mutex);
 		m_callbacks.push_back({id, stage, std::move(callback), 0});
+		if (stage == RenderStage::PostOpaque)
+			m_post_opaque_callbacks.fetch_add(1, std::memory_order_release);
 		return id;
 	}
 
 	void GraphicsRegistry::remove_render_callback(const RenderCallbackId id)
 	{
 		std::lock_guard lock(m_callbacks_mutex);
-		std::erase_if(m_callbacks, [id](const Entry& entry) { return entry.id == id; });
+		std::erase_if(m_callbacks, [this, id](const Entry& entry) {
+			if (entry.id != id)
+				return false;
+			if (entry.stage == RenderStage::PostOpaque)
+				m_post_opaque_callbacks.fetch_sub(1, std::memory_order_release);
+			return true;
+		});
 		std::erase_if(m_device_callbacks, [id](const auto& entry) { return entry.first == id; });
 	}
 
@@ -157,6 +167,8 @@ namespace rml::graphics
 			if (++it->failures >= k_max_callback_failures)
 			{
 				RML_ERROR("render callback removed after {} failures", it->failures);
+				if (it->stage == RenderStage::PostOpaque)
+					m_post_opaque_callbacks.fetch_sub(1, std::memory_order_release);
 				it = m_callbacks.erase(it);
 			}
 			else
@@ -171,6 +183,20 @@ namespace rml::graphics
 	{
 		std::lock_guard lock(m_callbacks_mutex);
 		return std::ranges::any_of(m_callbacks, [stage](const Entry& entry) { return entry.stage == stage; });
+	}
+
+	unsigned GraphicsRegistry::on_begin_pass(RBX::Graphics::Framebuffer* framebuffer, unsigned store_mask, const RBX::Graphics::PassResolve* resolve, const unsigned flags)
+	{
+		const bool resolves = resolve && resolve->mask != 0;
+		if (resolves && m_post_opaque_callbacks.load(std::memory_order_acquire) > 0)
+			store_mask |= resolve->mask;
+		m_open_pass = {framebuffer, store_mask, flags, resolves, resolves ? *resolve : RBX::Graphics::PassResolve{}};
+		return store_mask;
+	}
+
+	const OpenPass* GraphicsRegistry::open_pass(const RBX::Graphics::Framebuffer* framebuffer) const
+	{
+		return m_open_pass.framebuffer == framebuffer ? &m_open_pass : nullptr;
 	}
 
 	void GraphicsRegistry::begin_scene(RBX::Graphics::SceneManager* scene_manager, const bool engine_clouds, const std::uint32_t capture_mode)
@@ -303,6 +329,16 @@ namespace rml::graphics
 		return renders.empty() ? nullptr : renders.front();
 	}
 
+	static void* follow_thunk(void* target)
+	{
+#if defined(RML_MACOS)
+		const auto word = *static_cast<const std::uint32_t*>(target);
+		if (memory::instruction::arm64_is_branch(word) && !memory::instruction::arm64_is_linked_branch(word))
+			return reinterpret_cast<void*>(memory::instruction::arm64_branch_target(reinterpret_cast<std::uintptr_t>(target), word));
+#endif
+		return target;
+	}
+
 	void* device_destructor_target()
 	{
 		auto* const index = memory::rtti();
@@ -310,17 +346,45 @@ namespace rml::graphics
 			return nullptr;
 
 		const memory::module image(platform::studio_image_name());
-		for (const auto* name : {"RBX::Graphics::DeviceD3D11", "RBX::Graphics::DeviceMetal"})
+		for (const auto* name : {"RBX::Graphics::DeviceD3D11", "RBX::Graphics::DeviceMtl"})
 		{
 			const auto vtable = index->find(name);
 			if (!vtable)
 				continue;
 
 			auto* target = (*vtable)[0];
+			if (image.contains(memory::handle(target)))
+				target = follow_thunk(target);
 			const auto function = image.contains(memory::handle(target)) ? memory::function_containing(target) : std::nullopt;
 			if (!function || function->start != target || function->size < k_min_detour_target_size)
 			{
 				RML_ERROR("{} destructor is not detourable", name);
+				return nullptr;
+			}
+			return target;
+		}
+		return nullptr;
+	}
+
+	void* device_context_begin_pass_target()
+	{
+		auto* const index = memory::rtti();
+		if (!index)
+			return nullptr;
+
+		const memory::module image(platform::studio_image_name());
+		const auto slot = vtable_index_of(&RBX::Graphics::DeviceContext::begin_pass, nullptr, 0u, 0u, nullptr, nullptr, 0u);
+		for (const auto* name : {"RBX::Graphics::DeviceContextD3D11", "RBX::Graphics::DeviceContextMtl"})
+		{
+			const auto vtable = index->find(name);
+			if (!vtable)
+				continue;
+
+			auto* target = (*vtable)[slot];
+			const auto function = image.contains(memory::handle(target)) ? memory::function_containing(target) : std::nullopt;
+			if (!function || function->start != target || function->size < k_min_detour_target_size)
+			{
+				RML_ERROR("{} vtable slot {} is not detourable", name, slot);
 				return nullptr;
 			}
 			return target;

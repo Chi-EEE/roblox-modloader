@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RobloxModLoader/roblox/graphics/render_pass.hpp"
+#include "RobloxModLoader/roblox/graphics/types.hpp"
 #include "RobloxModLoader/roblox/graphics/visual_engine.hpp"
 
 #include <atomic>
@@ -12,6 +13,16 @@ namespace rml::graphics
 {
 	void* adorn_render_pre_submit_pass_target();
 	void* device_destructor_target();
+	void* device_context_begin_pass_target();
+
+	struct OpenPass
+	{
+		RBX::Graphics::Framebuffer* framebuffer{};
+		unsigned store_mask{};
+		unsigned flags{};
+		bool resolves{};
+		RBX::Graphics::PassResolve resolve{};
+	};
 
 	class GraphicsRegistry
 	{
@@ -28,6 +39,8 @@ namespace rml::graphics
 		void remove_render_callback(RenderCallbackId id);
 		std::size_t run_render_callbacks(RenderPassContext& context);
 		[[nodiscard]] bool has_render_callbacks(RenderStage stage);
+		unsigned on_begin_pass(RBX::Graphics::Framebuffer* framebuffer, unsigned store_mask, const RBX::Graphics::PassResolve* resolve, unsigned flags);
+		[[nodiscard]] const OpenPass* open_pass(const RBX::Graphics::Framebuffer* framebuffer) const;
 		void begin_scene(RBX::Graphics::SceneManager* scene_manager, bool engine_clouds, std::uint32_t capture_mode);
 		RenderCallbackId add_device_teardown_callback(DeviceCallback callback);
 		void set_device_teardown_available(bool available);
@@ -81,5 +94,7 @@ namespace rml::graphics
 		std::atomic<bool> m_engine_clouds{false};
 		std::atomic<bool> m_engine_clouds_replaced{false};
 		std::atomic<std::uint32_t> m_capture_mode{0};
+		OpenPass m_open_pass;
+		std::atomic<unsigned> m_post_opaque_callbacks{0};
 	};
 }

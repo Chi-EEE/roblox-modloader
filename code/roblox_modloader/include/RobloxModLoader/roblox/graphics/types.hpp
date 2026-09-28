@@ -210,7 +210,18 @@ namespace RBX::Graphics
 	RML_ASSERT_SIZE(PassClear, 84);
 	RML_LAYOUT_DIAGNOSTIC_POP()
 
-	struct PassResolve;
+	class Framebuffer;
+
+	struct PassResolve
+	{
+		std::uint32_t mask;
+		Framebuffer* framebuffer;
+	};
+
+	RML_LAYOUT_DIAGNOSTIC_PUSH()
+	RML_ASSERT_SIZE(PassResolve, 16);
+	RML_LAYOUT_DIAGNOSTIC_POP()
+
 	struct ConstantBuffer;
 	struct DeviceCaps;
 	struct DeviceStats;

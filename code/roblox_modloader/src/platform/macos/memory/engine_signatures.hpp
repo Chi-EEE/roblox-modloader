@@ -81,6 +81,20 @@ namespace rml
 				},
 			},
 			{
+				"CLOUDS_UPDATE",
+				"FC 6F BA A9 FA 67 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 7B 05 A9 FD 43 01 91 FF C3 06 D1 ? ? ? ? 08 09 40 F9 08 01 40 F9 A8 03 1A F8 08 2C 43 39 ? ? ? ? F9 03 07 AA FA 03 06 AA",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.clouds_update = ptr.as<functions::clouds_update>();
+				},
+			},
+			{
+				"CLOUDS_COMPOSITE_CLOUDS",
+				"08 2C 43 39 ? ? ? ? C0 03 5F D6 ? ? ? ? ? ? ? ? 08 01 40 39 1F 05 00 71 ? ? ? ? 08 00 40 39 1F 05 00 71 ? ? ? ? E2 03 03 AA E3 03 04 AA ? ? ? ?",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.clouds_composite_clouds = ptr.add(0x34).bl().as<functions::clouds_composite_clouds>();
+				},
+			},
+			{
 				"PROPERTY_DESCRIPTOR_CTOR",
 				"F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F4 03 07 AA F3 03 05 AA",
 				[](const memory::handle ptr) {

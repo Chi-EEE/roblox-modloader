@@ -161,6 +161,7 @@ struct RobloxPointers
 	functions::scene_manager_render_scene scene_manager_render_scene;
 	functions::clouds_update clouds_update;
 	functions::clouds_composite clouds_composite;
+	functions::clouds_composite_clouds clouds_composite_clouds;
 
 	const std::vector<const RBX::Reflection::Type*>* type_registry;
 };

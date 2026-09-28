@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <iterator>
 #include <stdexcept>
 #include <vector>
@@ -19,6 +20,7 @@ namespace clouds
 
 	static constexpr unsigned k_frame_slot = 2;
 	static constexpr unsigned k_frame_size = sizeof(CloudFrame);
+	static constexpr std::uint32_t k_frame_mask = 1u << k_frame_slot;
 	static constexpr float k_planet_radius = 2.27e7f;
 	static constexpr float k_extinction_per_stud = 0.045f;
 	static constexpr float k_noise_frequency = 1.f / 165000.f;
@@ -168,11 +170,13 @@ namespace clouds
 		});
 	}
 
-	std::shared_ptr<ShaderProgram> CloudRenderer::make_program(Device& device, const std::string_view defines, const std::string_view pass, const std::string_view entry, const std::string& name) const
+	std::shared_ptr<ShaderProgram> CloudRenderer::make_program(Device& device, const std::string_view defines, const shaders::Source& pass, const std::string_view entry, const std::uint32_t texture_mask, const std::string& name) const
 	{
 		std::string source;
-		source.append(defines).append(shaders::common).append("\n").append(pass);
-		auto program = rml::graphics::create_program(device, {{}, source, "FullscreenVS"}, {{}, source, entry}, name);
+		source.append(defines).append(shaders::common.hlsl).append("\n").append(pass.hlsl);
+		const auto vertex_metal = std::format("#define RML_ENTRY_FullscreenVS 1\n{}", shaders::common.metal);
+		const auto fragment_metal = std::format("{}#define RML_ENTRY_{} 1\n{}\n{}", defines, entry, shaders::common.metal, pass.metal);
+		auto program = rml::graphics::create_program(device, {vertex_metal, source, "FullscreenVS"}, {fragment_metal, source, entry, k_frame_mask, texture_mask}, name);
 		if (!program)
 			throw std::runtime_error(program.error());
 		return std::move(*program);
@@ -210,15 +214,15 @@ namespace clouds
 		try
 		{
 			auto& programs = m_gpu.programs;
-			programs.depth = make_program(device, "", shaders::depth, "DepthPS", "rml_clouds_depth");
-			programs.depth_msaa = make_program(device, "#define RML_MSAA 1\n", shaders::depth, "DepthPS", "rml_clouds_depth_msaa");
-			programs.trace = make_program(device, "", shaders::trace, "TracePS", "rml_clouds_trace");
-			programs.reconstruct = make_program(device, "", shaders::reconstruct, "ReconstructPS", "rml_clouds_reconstruct");
-			programs.composite_sky = make_program(device, "#define RML_COMPOSITE_SKY 1\n", shaders::composite, "CompositePS", "rml_clouds_composite_sky");
-			programs.composite_geometry = make_program(device, "#define RML_COMPOSITE_SKY 0\n", shaders::composite, "CompositePS", "rml_clouds_composite_geometry");
-			programs.cloud_depth = make_program(device, "", shaders::composite, "CloudDepthPS", "rml_clouds_depth_write");
-			programs.shadow_map = make_program(device, "", shaders::trace, "ShadowMapPS", "rml_clouds_shadow_map");
-			programs.shadow = make_program(device, "", shaders::composite, "ShadowPS", "rml_clouds_shadow");
+			programs.depth = make_program(device, "", shaders::depth, "DepthPS", 0x1, "rml_clouds_depth");
+			programs.depth_msaa = make_program(device, "#define RML_MSAA 1\n", shaders::depth, "DepthPS", 0x1, "rml_clouds_depth_msaa");
+			programs.trace = make_program(device, "", shaders::trace, "TracePS", 0xF, "rml_clouds_trace");
+			programs.reconstruct = make_program(device, "", shaders::reconstruct, "ReconstructPS", 0xF, "rml_clouds_reconstruct");
+			programs.composite_sky = make_program(device, "#define RML_COMPOSITE_SKY 1\n", shaders::composite, "CompositePS", 0x1, "rml_clouds_composite_sky");
+			programs.composite_geometry = make_program(device, "#define RML_COMPOSITE_SKY 0\n", shaders::composite, "CompositePS", 0x1, "rml_clouds_composite_geometry");
+			programs.cloud_depth = make_program(device, "", shaders::composite, "CloudDepthPS", 0x7, "rml_clouds_depth_write");
+			programs.shadow_map = make_program(device, "", shaders::trace, "ShadowMapPS", 0x7, "rml_clouds_shadow_map");
+			programs.shadow = make_program(device, "", shaders::composite, "ShadowPS", 0xC, "rml_clouds_shadow");
 			m_gpu.shadow = target(device, Texture::Format::R16F, k_shadow_size, k_shadow_size, "rml_clouds_shadow");
 			m_gpu.shadow_fb = framebuffer(device, {m_gpu.shadow}, "rml_clouds_shadow");
 			m_gpu.layout = device.create_vertex_layout_impl({}, {}, "rml_clouds");

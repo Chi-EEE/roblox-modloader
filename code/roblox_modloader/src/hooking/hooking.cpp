@@ -64,11 +64,17 @@ namespace rml
 			DetourHookHelper::add<Hooks::scene_manager_render_scene>("SCENE_MANAGER_RENDER_SCENE",
 			    reinterpret_cast<void*>(g_pointers->m_roblox_pointers.scene_manager_render_scene));
 
-		if (g_pointers->m_roblox_pointers.clouds_update && g_pointers->m_roblox_pointers.clouds_composite)
+		if (const auto& pointers = g_pointers->m_roblox_pointers; pointers.clouds_update && (pointers.clouds_composite || pointers.clouds_composite_clouds))
 		{
-			DetourHookHelper::add<Hooks::clouds_update>("CLOUDS_UPDATE", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.clouds_update));
-			DetourHookHelper::add<Hooks::clouds_composite>("CLOUDS_COMPOSITE", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.clouds_composite));
+			DetourHookHelper::add<Hooks::clouds_update>("CLOUDS_UPDATE", reinterpret_cast<void*>(pointers.clouds_update));
+			if (pointers.clouds_composite)
+				DetourHookHelper::add<Hooks::clouds_composite>("CLOUDS_COMPOSITE", reinterpret_cast<void*>(pointers.clouds_composite));
+			else
+				DetourHookHelper::add<Hooks::clouds_composite_clouds>("CLOUDS_COMPOSITE_CLOUDS", reinterpret_cast<void*>(pointers.clouds_composite_clouds));
 			graphics::GraphicsRegistry::instance().set_sky_stage_available(true);
+
+			if (const auto begin_pass = graphics::device_context_begin_pass_target())
+				DetourHookHelper::add<Hooks::device_context_begin_pass>("DEVICE_CONTEXT_BEGIN_PASS", begin_pass);
 		}
 
 		if (const auto device_destructor = graphics::device_destructor_target())

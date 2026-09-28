@@ -88,6 +88,7 @@ namespace functions
 	using scene_manager_render_scene = void (*)(void* self, RBX::Graphics::DeviceContext* context, RBX::Graphics::Framebuffer* target, const void* camera, RBX::ArrayView<RBX::Graphics::Framebuffer*> extra, std::uint32_t capture_mode);
 	using clouds_update = void (*)(void* clouds, RBX::Graphics::DeviceContext* context, void* view_info, const RBX::Graphics::RenderCamera* camera, RBX::Graphics::Framebuffer* main_framebuffer, RBX::Graphics::GlobalShaderData* globals, const void* camera_change, void* stats);
 	using clouds_composite = void (*)(void* clouds, RBX::Graphics::DeviceContext* context, const void* camera, RBX::Graphics::GlobalShaderData* globals, void* stats);
+	using clouds_composite_clouds = void (*)(void* clouds, RBX::Graphics::DeviceContext* context, RBX::Graphics::GlobalShaderData* globals, void* stats);
 
 	using lua_gettop = int(RML_ENGINE_CALL*)(lua_State* L);
 	using lua_settop = void(RML_ENGINE_CALL*)(lua_State* L, int idx);
