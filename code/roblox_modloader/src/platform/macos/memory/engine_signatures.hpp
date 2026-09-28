@@ -109,6 +109,20 @@ namespace rml
 				},
 			},
 			{
+				"SCENE_MANAGER_RENDER_SKY",
+				"08 B8 41 B9 1F 05 00 71 ? ? ? ? ? ? ? ? 00 1C 43 F9 ? ? ? ?",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.scene_manager_render_sky = ptr.as<functions::scene_manager_render_sky>();
+				},
+			},
+			{
+				"SCENE_MANAGER_RENDER_UI",
+				"E9 23 B9 6D FC 6F 01 A9 FA 67 02 A9 F8 5F 03 A9 F6 57 04 A9 F4 4F 05 A9 FD 7B 06 A9 FD 83 01 91 FF 43 14 D1 FC 03 06 AA",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.scene_manager_render_ui = ptr.as<functions::scene_manager_render_ui>();
+				},
+			},
+			{
 				"PROPERTY_DESCRIPTOR_CTOR",
 				"F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F4 03 07 AA F3 03 05 AA",
 				[](const memory::handle ptr) {

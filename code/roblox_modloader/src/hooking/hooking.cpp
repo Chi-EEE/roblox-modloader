@@ -104,6 +104,21 @@ namespace rml
 		if (classic_queues != main_view_queues)
 			RML_WARN("queue injection points cover only the {} pipeline", classic_queues ? "classic" : "MainView");
 
+		if (g_pointers->m_roblox_pointers.scene_manager_render_sky)
+		{
+			DetourHookHelper::add<Hooks::scene_manager_render_sky>("SCENE_MANAGER_RENDER_SKY", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.scene_manager_render_sky));
+			injection_table.resolve_stage(render::EngineStage::Sky);
+			engine_stages.mark_hooked(render::EngineStage::Sky);
+		}
+
+		if (g_pointers->m_roblox_pointers.scene_manager_render_ui)
+		{
+			DetourHookHelper::add<Hooks::scene_manager_render_ui>("SCENE_MANAGER_RENDER_UI", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.scene_manager_render_ui));
+			injection_table.resolve(render::InjectionPoint::at(render::FramePoint::UIBefore));
+			injection_table.resolve_stage(render::EngineStage::UI);
+			engine_stages.mark_hooked(render::EngineStage::UI);
+		}
+
 		if (const auto device_destructor = graphics::device_destructor_target())
 		{
 			DetourHookHelper::add<Hooks::device_destroy>("DEVICE_DESTROY", device_destructor);
