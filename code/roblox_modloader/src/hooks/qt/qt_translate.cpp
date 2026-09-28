@@ -2,7 +2,7 @@
 #include "RobloxModLoader/internal/common.hpp"
 #include "RobloxModLoader/internal/hooking/engine_hooks.hpp"
 #include "RobloxModLoader/qt/qstring.hpp"
-#include "roblox/reflection/metadata_registry.hpp"
+#include "roblox/reflection/category_labels.hpp"
 
 #include <array>
 #include <string_view>
@@ -22,7 +22,7 @@ rml::qt::QString rml::Hooks::qt_translate(const char* context, const char* key, 
 		{
 			if (!text.starts_with(prefix))
 				continue;
-			const auto name = reflection::MetadataRegistry::instance().category_name(text.substr(prefix.size()));
+			const auto name = reflection::CategoryLabels::instance().find(text.substr(prefix.size()));
 			if (!name)
 				break;
 			auto translated = original(context, key, disambiguation, n);

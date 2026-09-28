@@ -10,7 +10,7 @@ void* rml::Hooks::reflection_metadata_load(void* self, const void* path)
 	auto* result = Hooking::get_original<&Hooks::reflection_metadata_load>()(self, path);
 	try
 	{
-		reflection::MetadataRegistry::instance().on_tree_loaded(static_cast<RBX::Instance*>(self));
+		reflection::MetadataRegistry::instance().on_tree_loaded(self);
 	}
 	catch (const std::exception& e)
 	{

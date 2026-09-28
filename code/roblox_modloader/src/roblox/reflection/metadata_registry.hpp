@@ -1,33 +1,35 @@
 #pragma once
 
-#include "RobloxModLoader/memory/string_anchor.hpp"
 #include "RobloxModLoader/roblox/reflection/hints.hpp"
 
 #include <atomic>
-#include <memory>
+#include <cstdint>
 #include <mutex>
-#include <optional>
-#include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
-namespace RBX
+namespace RBX::Reflection
 {
-	class Instance;
+	class ClassDescriptor;
+	class PropertyDescriptor;
+
+	namespace Metadata
+	{
+		class Reflection;
+	}
 }
 
 namespace rml::reflection
 {
 	struct PropertyMetadata
 	{
-		std::string name;
+		const RBX::Reflection::PropertyDescriptor* descriptor;
 		PropertyHints hints;
 	};
 
 	struct ClassMetadata
 	{
-		std::string class_name;
+		const RBX::Reflection::ClassDescriptor* descriptor;
 		bool owned_class{};
 		ClassHints hints;
 		std::vector<PropertyMetadata> properties;
@@ -36,36 +38,29 @@ namespace rml::reflection
 	class MetadataRegistry
 	{
 	public:
+		enum class State : std::uint8_t
+		{
+			Pending,
+			Applied,
+			Disabled
+		};
+
 		static MetadataRegistry& instance();
 
 		void add(ClassMetadata metadata);
-		void request_flush();
-		void on_tree_loaded(RBX::Instance* root);
-		void register_category(std::string_view name);
-		[[nodiscard]] std::optional<std::string> category_name(std::string_view translation_suffix) const;
+		void on_tree_loaded(void* candidate);
+		[[nodiscard]] State state() const;
 
 	private:
-		void flush(bool last_chance);
-		bool adopt_root(RBX::Instance* root);
-		RBX::Instance* find_root();
-		void disable(const std::string& reason);
-		void apply(const ClassMetadata& metadata);
-		RBX::Instance* insert(RBX::Instance* parent, const char* class_name, const std::string& name);
-		void apply_descriptions();
+		void try_apply(RBX::Reflection::Metadata::Reflection* root, bool required);
+		void apply(RBX::Reflection::Metadata::Reflection& root, const ClassMetadata& metadata);
+		void schedule_fallback();
+		void disable(std::string_view reason);
 
-		std::mutex m_mutex;
-		std::recursive_mutex m_flush_mutex;
+		mutable std::recursive_mutex m_mutex;
+		std::atomic<State> m_state{State::Pending};
 		std::vector<ClassMetadata> m_pending;
-		std::once_flag m_install_once;
-		std::atomic<bool> m_disabled{false};
-		std::optional<memory::AnchoredFunction> m_getter;
-		RBX::Instance* m_root{};
-		std::vector<std::shared_ptr<RBX::Instance>> m_owned;
-		std::unordered_map<std::string, std::string> m_descriptions;
-		std::optional<memory::AnchoredFunction> m_fill_documentation;
-		bool m_descriptions_pending{};
-		bool m_descriptions_unavailable{};
-		mutable std::mutex m_categories_mutex;
-		std::unordered_map<std::string, std::string> m_categories;
+		std::vector<ClassMetadata> m_applied;
+		std::once_flag m_fallback_once;
 	};
 }

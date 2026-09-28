@@ -1,5 +1,6 @@
 #include "class_registry.hpp"
 
+#include "category_labels.hpp"
 #include "metadata_registry.hpp"
 #include "mod_descriptors.hpp"
 
@@ -15,6 +16,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <set>
 #include <stdexcept>
 
 RML_LOG_SCOPE("ClassRegistry");
@@ -89,55 +91,76 @@ namespace rml::reflection
 		return 0;
 	}
 
-	static std::expected<void, std::string> check_hints(const std::string& owner, const PropertySpec& property)
+	static std::expected<void, std::string> check_properties(const std::string& owner, const std::vector<PropertySpec>& properties, const RBX::Reflection::ClassDescriptor* existing)
 	{
-		const auto& slider = property.hints.slider;
-		if (!slider)
-			return {};
-		if (!std::isfinite(slider->min) || !std::isfinite(slider->max) || slider->min >= slider->max)
-			return std::unexpected(std::format("{}.{}: a slider needs finite bounds with min < max (got {} and {})", owner, property.name, slider->min, slider->max));
-		if (slider->ticks < 0)
-			return std::unexpected(std::format("{}.{}: slider ticks must not be negative (got {})", owner, property.name, slider->ticks));
+		std::set<std::string_view> names;
+		for (const auto& property : properties)
+		{
+			if (!names.insert(property.name).second)
+				return std::unexpected(std::format("{}: property '{}' is declared twice", owner, property.name));
+			if (existing && existing->find_property(property.name.c_str()))
+				return std::unexpected(std::format("class '{}' already has a property named '{}'", owner, property.name));
+			if (const auto& slider = property.hints.slider)
+			{
+				if (!std::isfinite(slider->min) || !std::isfinite(slider->max) || slider->min >= slider->max)
+					return std::unexpected(std::format("{}.{}: a slider needs finite bounds with min < max (got {} and {})", owner, property.name, slider->min, slider->max));
+				if (slider->ticks < 0)
+					return std::unexpected(std::format("{}.{}: slider ticks must not be negative (got {})", owner, property.name, slider->ticks));
+			}
+		}
 		return {};
 	}
 
-	static void apply_descriptor_hints(const PropertySpec& property, std::byte* storage)
+	template<typename Entry>
+	static std::expected<void, std::string> build_members(Entry& entry, void* owner, const std::vector<PropertySpec>& properties, const std::vector<FunctionSpec>& functions)
 	{
-		if (property.hints.deprecated)
-			reinterpret_cast<RBX::Reflection::Descriptor*>(storage)->attributes.is_deprecated = true;
-	}
-
-	static void publish_metadata_unguarded(const std::string& class_name, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties)
-	{
-		auto& registry = MetadataRegistry::instance();
-		if (hints.insert_category)
-			registry.register_category(*hints.insert_category);
-		for (const auto& property : properties)
-			registry.register_category(property.category);
-
-		ClassMetadata metadata{class_name, owned_class, hints, {}};
 		for (const auto& property : properties)
 		{
-			if (!property.hints.empty())
-				metadata.properties.push_back(PropertyMetadata{property.name, property.hints});
+			auto member = make_property(owner, property.name, property.category, property.type, property.accessor.get());
+			if (!member)
+				return std::unexpected(member.error());
+			if (property.hints.deprecated)
+				reinterpret_cast<RBX::Reflection::Descriptor*>(member->storage.get())->attributes.is_deprecated = true;
+			entry.property_table.push_back(reinterpret_cast<const RBX::Reflection::PropertyDescriptor*>(member->storage.get()));
+			entry.member_storage.push_back(std::move(member->storage));
+			entry.accessors.push_back(property.accessor);
 		}
-		if (owned_class || !metadata.properties.empty())
-			registry.add(std::move(metadata));
+
+		for (const auto& function : functions)
+		{
+			auto member = make_function(owner, function.name, function.invoker.get());
+			if (!member)
+				return std::unexpected(member.error());
+			entry.function_table.push_back(reinterpret_cast<const RBX::Reflection::FunctionDescriptor*>(member->storage.get()));
+			entry.member_storage.push_back(std::move(member->storage));
+			entry.invokers.push_back(function.invoker);
+		}
+		return {};
 	}
 
-	static void publish_metadata(const std::string& class_name, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties)
+	static void publish_metadata(const RBX::Reflection::ClassDescriptor* descriptor, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties, const std::vector<const RBX::Reflection::PropertyDescriptor*>& table)
 	{
 		try
 		{
-			publish_metadata_unguarded(class_name, owned_class, hints, properties);
+			if (hints.insert_category)
+				CategoryLabels::instance().add(*hints.insert_category);
+			ClassMetadata metadata{descriptor, owned_class, hints, {}};
+			for (std::size_t i = 0; i < properties.size() && i < table.size(); ++i)
+			{
+				CategoryLabels::instance().add(properties[i].category);
+				if (!properties[i].hints.empty())
+					metadata.properties.push_back(PropertyMetadata{table[i], properties[i].hints});
+			}
+			if (owned_class || !metadata.properties.empty())
+				MetadataRegistry::instance().add(std::move(metadata));
 		}
 		catch (const std::exception& e)
 		{
-			RML_ERROR("metadata for {} could not be published: {}", class_name, e.what());
+			RML_ERROR("metadata for {} could not be published: {}", descriptor->name.to_string(), e.what());
 		}
 		catch (...)
 		{
-			RML_ERROR("metadata for {} could not be published: unknown exception", class_name);
+			RML_ERROR("metadata for {} could not be published: unknown exception", descriptor->name.to_string());
 		}
 	}
 
@@ -253,6 +276,9 @@ namespace rml::reflection
 		if (!base)
 			return std::unexpected(std::format("base class '{}' not found", spec.base));
 
+		if (auto checked = check_properties(spec.name, spec.properties, nullptr); !checked)
+			return std::unexpected(checked.error());
+
 		auto* const index = memory::rtti();
 		if (!index)
 			return std::unexpected("no RTTI index; engine vtables are unreachable");
@@ -269,39 +295,10 @@ namespace rml::reflection
 		entry.storage = std::make_unique<std::byte[]>(k_class_descriptor_storage);
 		std::memset(entry.storage.get(), 0, k_class_descriptor_storage);
 
-		for (const auto& property : spec.properties)
+		if (auto built = build_members(entry, entry.storage.get(), spec.properties, spec.functions); !built)
 		{
-			if (auto checked = check_hints(spec.name, property); !checked)
-			{
-				m_classes.pop_back();
-				return std::unexpected(checked.error());
-			}
-
-			auto member = make_property(entry.storage.get(), property.name, property.category, property.type, property.accessor.get());
-			if (!member)
-			{
-				m_classes.pop_back();
-				return std::unexpected(member.error());
-			}
-
-			apply_descriptor_hints(property, member->storage.get());
-			entry.property_table.push_back(reinterpret_cast<const RBX::Reflection::PropertyDescriptor*>(member->storage.get()));
-			entry.member_storage.push_back(std::move(member->storage));
-			entry.accessors.push_back(property.accessor);
-		}
-
-		for (const auto& function : spec.functions)
-		{
-			auto member = make_function(entry.storage.get(), function.name, function.invoker.get());
-			if (!member)
-			{
-				m_classes.pop_back();
-				return std::unexpected(member.error());
-			}
-
-			entry.function_table.push_back(reinterpret_cast<const RBX::Reflection::FunctionDescriptor*>(member->storage.get()));
-			entry.member_storage.push_back(std::move(member->storage));
-			entry.invokers.push_back(function.invoker);
+			m_classes.pop_back();
+			return std::unexpected(built.error());
 		}
 
 		for (const auto& event : spec.events)
@@ -333,7 +330,7 @@ namespace rml::reflection
 		m_creators[&entry.descriptor->name] = entry.creator.get();
 		m_by_descriptor[entry.descriptor] = &entry;
 
-		publish_metadata(spec.name, true, spec.hints, spec.properties);
+		publish_metadata(entry.descriptor, true, spec.hints, spec.properties, entry.property_table);
 		RML_INFO("Registered class {} : {} ({} bytes, {} properties, {} functions, {} events, descriptor 0x{:X})", spec.name, spec.base, spec.layout.size,
 		    entry.property_table.size(), entry.function_table.size(), entry.event_table.size(), reinterpret_cast<std::uintptr_t>(entry.descriptor));
 		return entry.descriptor;
@@ -376,54 +373,22 @@ namespace rml::reflection
 		if (static_cast<RBX::Reflection::MemberDescriptorContainer<RBX::Reflection::PropertyDescriptor>&>(*descriptor).finalized)
 			return std::unexpected(std::format("class '{}' is already finalized", spec.name));
 
+		if (auto checked = check_properties(spec.name, spec.properties, descriptor); !checked)
+			return std::unexpected(checked.error());
+
 		auto& entry = m_extensions.emplace_back();
 		entry.descriptor = descriptor;
 
-		for (const auto& property : spec.properties)
+		if (auto built = build_members(entry, descriptor, spec.properties, spec.functions); !built)
 		{
-			if (auto checked = check_hints(spec.name, property); !checked)
-			{
-				m_extensions.pop_back();
-				return std::unexpected(checked.error());
-			}
-
-			if (descriptor->find_property(property.name.c_str()))
-			{
-				m_extensions.pop_back();
-				return std::unexpected(std::format("class '{}' already has a property named '{}'", spec.name, property.name));
-			}
-
-			auto member = make_property(descriptor, property.name, property.category, property.type, property.accessor.get());
-			if (!member)
-			{
-				m_extensions.pop_back();
-				return std::unexpected(member.error());
-			}
-
-			apply_descriptor_hints(property, member->storage.get());
-			entry.property_table.push_back(reinterpret_cast<const RBX::Reflection::PropertyDescriptor*>(member->storage.get()));
-			entry.member_storage.push_back(std::move(member->storage));
-			entry.accessors.push_back(property.accessor);
-		}
-
-		for (const auto& function : spec.functions)
-		{
-			auto member = make_function(descriptor, function.name, function.invoker.get());
-			if (!member)
-			{
-				m_extensions.pop_back();
-				return std::unexpected(member.error());
-			}
-
-			entry.function_table.push_back(reinterpret_cast<const RBX::Reflection::FunctionDescriptor*>(member->storage.get()));
-			entry.member_storage.push_back(std::move(member->storage));
-			entry.invokers.push_back(function.invoker);
+			m_extensions.pop_back();
+			return std::unexpected(built.error());
 		}
 
 		append_members(descriptor, entry.property_table);
 		append_members(descriptor, entry.function_table);
 
-		publish_metadata(spec.name, false, {}, spec.properties);
+		publish_metadata(descriptor, false, {}, spec.properties, entry.property_table);
 		RML_INFO("Extended class {} with {} properties and {} functions", spec.name, entry.property_table.size(), entry.function_table.size());
 		return descriptor;
 	}
@@ -440,6 +405,19 @@ namespace rml::reflection
 		if (!entry || !entry->engine_vtable)
 			throw std::logic_error("engine_virtual called on an instance that is not a mod class");
 		return entry->engine_vtable[slot];
+	}
+
+	bool engine_base_overrides(const RBX::Instance* instance, const std::size_t slot)
+	{
+		static void** const instance_vtable = [] {
+			auto* const index = memory::rtti();
+			const auto vtable = index ? index->find("RBX::Instance") : std::nullopt;
+			return vtable ? *vtable : nullptr;
+		}();
+		const auto* entry = ClassRegistry::instance().class_of(instance);
+		if (!entry || !entry->engine_vtable || !instance_vtable)
+			return false;
+		return entry->engine_vtable[slot] != instance_vtable[slot];
 	}
 
 	void** ClassRegistry::vtable_for(RegisteredClass& entry, void** derived_vtable)
