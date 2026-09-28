@@ -1,10 +1,11 @@
-#include "cloud_renderer.hpp"
+#include "cloud_passes.hpp"
+#include "cloud_state.hpp"
 #include "volumetric_clouds.hpp"
 
 #include <RobloxModLoader/logger/logger.hpp>
 #include <RobloxModLoader/mod/init_context.hpp>
 #include <RobloxModLoader/mod/mod_base.hpp>
-#include <RobloxModLoader/roblox/graphics/render_pass.hpp>
+#include <RobloxModLoader/render/render_graph.hpp>
 #include <spdlog/spdlog.h>
 
 #include <memory>
@@ -15,7 +16,7 @@ public:
 	VolumetricCloudsMod()
 	{
 		name = "Volumetric Clouds";
-		version = "1.0.0";
+		version = "1.1.0";
 		author = "Revolution";
 		description = "Adds the VolumetricClouds instance";
 		m_log = rml::Logger::get_logger("VolumetricClouds");
@@ -29,35 +30,24 @@ public:
 
 	void on_load() override
 	{
-		using rml::graphics::RenderPassContext;
-		using rml::graphics::RenderStage;
-		m_teardown = rml::graphics::add_device_teardown_callback([this](RBX::Graphics::Device& device) {
-			if (m_renderer)
-				m_renderer->on_device_destroyed(device);
-		});
-		m_renderer = std::make_unique<clouds::CloudRenderer>(paths().dir("cache") / "noise.bin", m_log, m_teardown != 0);
-		m_prepare = rml::graphics::add_render_callback(RenderStage::SkyPrepare, [this](RenderPassContext& pass) { m_renderer->prepare(pass); });
-		m_render = rml::graphics::add_render_callback(RenderStage::PostOpaque, [this](RenderPassContext& pass) { m_renderer->render(pass); });
-		m_composite = rml::graphics::add_render_callback(RenderStage::Sky, [this](RenderPassContext& pass) { m_renderer->composite(pass); });
+		auto state = std::make_shared<clouds::CloudState>(paths().dir("cache") / "noise.bin", m_log);
+		auto& graph = rml::render::graph();
+		graph.add_pass(std::make_unique<clouds::CloudDepthPass>(state));
+		graph.add_pass(std::make_unique<clouds::CloudShadowPass>(state));
+		graph.add_pass(std::make_unique<clouds::CloudTracePass>(state));
+		graph.add_pass(std::make_unique<clouds::CloudReconstructPass>(state));
+		graph.add_pass(std::make_unique<clouds::CloudCompositePass>(state));
 	}
 
 	void on_unload() override
 	{
-		rml::graphics::remove_render_callback(m_prepare);
-		rml::graphics::remove_render_callback(m_render);
-		rml::graphics::remove_render_callback(m_composite);
-		rml::graphics::remove_render_callback(m_teardown);
-		rml::graphics::set_sky_stage_enabled(false);
-		m_renderer.reset();
+		auto& graph = rml::render::graph();
+		for (const auto name : clouds::pass_names::ALL)
+			graph.remove_pass(name);
 	}
 
 private:
 	std::shared_ptr<spdlog::logger> m_log;
-	std::unique_ptr<clouds::CloudRenderer> m_renderer;
-	rml::graphics::RenderCallbackId m_prepare{};
-	rml::graphics::RenderCallbackId m_render{};
-	rml::graphics::RenderCallbackId m_composite{};
-	rml::graphics::RenderCallbackId m_teardown{};
 };
 
 extern "C"

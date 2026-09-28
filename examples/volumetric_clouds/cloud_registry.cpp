@@ -1,7 +1,5 @@
 #include "cloud_registry.hpp"
 
-#include <RobloxModLoader/roblox/graphics/render_pass.hpp>
-
 #include <algorithm>
 
 namespace clouds
@@ -28,7 +26,6 @@ namespace clouds
 	{
 		std::lock_guard lock(m_mutex);
 		std::erase_if(m_entries, [owner](const Entry& entry) { return entry.owner == owner; });
-		refresh();
 	}
 
 	void CloudRegistry::update(const void* owner, const CloudSettings& settings)
@@ -40,7 +37,6 @@ namespace clouds
 		if (settings.enabled && !entry->settings.enabled)
 			entry->order = m_next_order++;
 		entry->settings = settings;
-		refresh();
 	}
 
 	void CloudRegistry::set_placed(const void* owner, const bool placed)
@@ -52,7 +48,6 @@ namespace clouds
 		entry->placed = placed;
 		if (placed)
 			entry->order = m_next_order++;
-		refresh();
 	}
 
 	std::optional<CloudSettings> CloudRegistry::active() const
@@ -65,14 +60,5 @@ namespace clouds
 				best = &entry;
 		}
 		return best ? std::optional(best->settings) : std::nullopt;
-	}
-
-	void CloudRegistry::refresh()
-	{
-		const bool any = std::ranges::any_of(m_entries, [](const Entry& entry) { return entry.placed && entry.settings.enabled; });
-		if (any == m_any_active)
-			return;
-		m_any_active = any;
-		rml::graphics::set_sky_stage_enabled(any);
 	}
 }
