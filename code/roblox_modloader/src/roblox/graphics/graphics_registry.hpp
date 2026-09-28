@@ -27,6 +27,7 @@ namespace rml::graphics
 		RenderCallbackId add_render_callback(RenderStage stage, RenderCallback callback);
 		void remove_render_callback(RenderCallbackId id);
 		std::size_t run_render_callbacks(RenderPassContext& context);
+		[[nodiscard]] bool has_render_callbacks(RenderStage stage);
 		void begin_scene(RBX::Graphics::SceneManager* scene_manager, bool engine_clouds, std::uint32_t capture_mode);
 		RenderCallbackId add_device_teardown_callback(DeviceCallback callback);
 		void set_device_teardown_available(bool available);

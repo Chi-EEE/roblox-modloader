@@ -80,24 +80,48 @@ float HeightProfile(float hf, float type)
     return smoothstep(g.x, g.y, hf) - smoothstep(g.z, g.w, hf);
 }
 
-float SampleDensity(float3 pos, float hf, float mip, bool detail)
+static const float k_near_step = 60;
+static const float k_fade_in = 120;
+static const float k_light_step_max = 1200;
+static const float k_light_extinction = 1.5;
+static const float k_erosion_occlusion = 0.1;
+
+struct CloudSample
 {
-    float2 weather = WeatherMap.SampleLevel(WeatherSampler, (pos.xz + Weather.xy) * Weather.z, 0);
+    float density;
+    float occlusion;
+};
+
+CloudSample SampleCloud(float3 pos, float hf, float mip, float detailMip, bool detail, bool light)
+{
+    CloudSample result;
+    result.density = 0;
+    result.occlusion = 1;
+    float2 weather = WeatherMap.SampleLevel(WeatherSampler, (pos.xz - Weather.xy) * Weather.z, 0);
     float coverage = saturate(Shape.x * lerp(0.4, 1.6, weather.x));
     float profile = HeightProfile(hf, saturate(Erosion.z + (weather.y - 0.5) * 0.5));
     if (profile <= 0 || coverage <= 0)
-        return 0;
-    float3 sp = float3(pos.x + Wind.x + Motion.z * hf, pos.y + Motion.x, pos.z + Wind.y + Motion.w * hf) * Shape.w;
+        return result;
+    float slant = pos.x / 3 + pos.z / 7;
+    float3 sp = float3(pos.x - Wind.x - Motion.z * hf, pos.y + slant + Motion.x, pos.z - Wind.y - Motion.w * hf) * Shape.w;
     float n = lerp(1, ShapeNoise.SampleLevel(ShapeSampler, sp, mip), Shape.z);
     float base = saturate(Remap(n * profile, 1 - coverage, 1, 0, 1)) * coverage;
-    if (detail && base > 0)
+    if (base <= 0)
+        return result;
+    if (detail)
     {
-        float3 dp = float3(pos.x + Wind.z, pos.y + Motion.y, pos.z + Wind.w) * Erosion.y;
-        float d = DetailNoise.SampleLevel(DetailSampler, dp, mip);
-        d = lerp(d, 1 - d, saturate(hf * 4));
-        base = saturate(Remap(base, d * Erosion.x * 0.35, 1, 0, 1));
+        float3 dp = float3(pos.x - Wind.z, pos.y + Motion.y, pos.z - Wind.w) * Erosion.y;
+        float d = DetailNoise.SampleLevel(DetailSampler, dp, detailMip);
+        float erosion = lerp(d, 1 - d, saturate(hf * 4)) * Erosion.x * 0.35;
+        base = saturate(Remap(base, erosion, 1, 0, 1));
+        result.occlusion = saturate(1 - sqrt(erosion * k_erosion_occlusion));
     }
-    return base;
+    else if (light)
+    {
+        base = max(base - Erosion.x * 0.035, 0);
+    }
+    result.density = base;
+    return result;
 }
 
 float HenyeyGreenstein(float c, float g)
@@ -111,35 +135,42 @@ float Phase(float c, float scale)
     return lerp(HenyeyGreenstein(c, -0.3 * scale), HenyeyGreenstein(c, 0.8 * scale), 0.7);
 }
 
-float LightOpticalDepth(float3 pos, float hf, float mip, float jitter)
+float LightOpticalDepth(float3 pos, float hf)
 {
     float dy = SunDir.y;
     float toEdge = dy >= 0 ? (1 - hf) * Layer.z / max(dy, 0.05) : hf * Layer.z / max(-dy, 0.05);
-    float dist = min(toEdge, Layer.z);
     int steps = (int)Params.z;
-    float stepLen = dist / steps;
-    float density = 0;
+    float interval = (min(toEdge, steps * k_light_step_max) + 5) / steps;
+    float depth = 0;
     [loop] for (int j = 0; j < steps; ++j)
     {
-        float3 p = pos + SunDir.xyz * (stepLen * (j + jitter));
-        density += SampleDensity(p, saturate((p.y - Layer.x) * Layer.w), mip + j * 0.5, j < 2);
+        float3 p = pos + SunDir.xyz * (interval * (0.25 + j));
+        depth += SampleCloud(p, saturate((p.y - Layer.x) * Layer.w), 3.0 * j / steps, 0, false, true).density;
     }
-    float3 far = pos + SunDir.xyz * (dist + Layer.z * 0.5);
-    float farDensity = SampleDensity(far, saturate((far.y - Layer.x) * Layer.w), mip + 2, false);
-    return (density * stepLen + farDensity * Layer.z * 0.25) * Shape.y * 1.5;
+    return depth * interval * Shape.y * k_light_extinction;
 }
 
-float InterleavedGradientNoise(float2 p)
+float2 Octahedral(float3 d)
 {
-    p += 5.588238 * fmod(Params.x, 64);
+    d /= abs(d.x) + abs(d.y) + abs(d.z);
+    return d.y >= 0 ? d.xz : (1 - abs(d.zx)) * (d.xz >= 0 ? 1 : -1);
+}
+
+float DirectionNoise(float3 dir)
+{
+    float2 p = floor(Octahedral(dir) * HistorySize.y * 1.3);
     return frac(52.9829189 * frac(dot(p, float2(0.06711056, 0.00583715))));
 }
 
-void March(float3 dir, float tStart, float tEnd, float jitter, inout float3 radiance, inout float transmittance, inout float meanDistance)
+void March(float3 dir, float tStart, float tEnd, float jitter, inout float3 radiance, inout float transmittance, inout float meanDistance, inout float front)
 {
-    int steps = (int)Params.y;
+    bool inside = tStart < k_near_step;
+    int steps = (int)(Params.y * (inside ? 1.5 : 1));
     int octaves = (int)Params.w;
-    float stepLen = min((tEnd - tStart) / steps, Layer.z / 6);
+    float anchor = max(tStart, k_near_step);
+    float curve = log2(1 + (tEnd - tStart) / anchor);
+    float du = 1.0 / steps;
+    float growth = exp2(curve * du) - 1;
     float cosTheta = dot(dir, SunDir.xyz);
     float phases[3];
     float scale = 1;
@@ -149,34 +180,38 @@ void March(float3 dir, float tStart, float tEnd, float jitter, inout float3 radi
         scale *= Weather.w;
     }
     float3 sun = SunColor.rgb * PI;
-    float t = tStart + stepLen * jitter;
+    float u = du * jitter;
     float distanceSum = 0;
     float weightSum = 0;
     int empty = 0;
     bool coarse = true;
-    [loop] for (int i = 0; i < steps * 2 && t < tEnd; ++i)
+    [loop] for (int i = 0; i < steps * 2 && u < 1; ++i)
     {
+        float offset = anchor * (exp2(curve * u) - 1);
+        float t = tStart + offset;
+        float stepLen = (offset + anchor) * growth;
         float altitude = AltitudeAt(t, dir.y);
         float3 pos = float3(CameraPos.x + dir.x * t, altitude, CameraPos.z + dir.z * t);
         float hf = saturate((altitude - Layer.x) * Layer.w);
+        float fade = saturate(t / k_fade_in);
         float mip = saturate((t - 15000) / 150000) * 2.5;
         if (coarse)
         {
-            if (SampleDensity(pos, hf, mip + 1, false) > 0)
+            if (SampleCloud(pos, hf, mip + 1, 0, false, false).density * fade > 0)
             {
                 coarse = false;
-                t = max(tStart, t - stepLen);
+                u = max(u - du, du * jitter);
                 continue;
             }
-            t += stepLen * 2;
+            u += du * 2;
             continue;
         }
-        float density = SampleDensity(pos, hf, mip, true);
+        CloudSample cloud = SampleCloud(pos, hf, mip, saturate((t - 10000) / 250000) * 4, true, false);
+        float density = cloud.density * fade;
         if (density > 0.001)
         {
             empty = 0;
-            float sigma = density * Shape.y;
-            float opticalDepth = LightOpticalDepth(pos, hf, mip, jitter);
+            float opticalDepth = LightOpticalDepth(pos, hf);
             float3 scatter = 0;
             float ms = 1;
             [unroll] for (int k = 0; k < 3; ++k)
@@ -186,14 +221,16 @@ void March(float3 dir, float tStart, float tEnd, float jitter, inout float3 radi
                 ms *= Weather.w;
             }
             float powder = lerp(1, saturate(2 * (1 - exp(-4 * density))), smoothstep(0.5, -0.5, cosTheta) * Erosion.w);
-            float3 ambient = lerp(AmbientBottom.rgb, AmbientTop.rgb, hf);
+            float3 ambient = lerp(AmbientBottom.rgb, AmbientTop.rgb, hf) * cloud.occlusion;
             float3 source = (sun * scatter * powder + ambient) * Albedo.rgb;
-            float stepTransmittance = exp(-sigma * stepLen);
+            float stepTransmittance = exp(-density * Shape.y * stepLen);
             float absorbed = transmittance * (1 - stepTransmittance);
             radiance += source * absorbed;
             distanceSum += t * absorbed;
             weightSum += absorbed;
             transmittance *= stepTransmittance;
+            if (front < 0 && transmittance < 0.5)
+                front = t;
             if (transmittance < 0.005)
                 break;
         }
@@ -202,7 +239,7 @@ void March(float3 dir, float tStart, float tEnd, float jitter, inout float3 radi
             coarse = true;
             empty = 0;
         }
-        t += stepLen;
+        u += du;
     }
     if (weightSum > 0)
         meanDistance = distanceSum / weightSum;
@@ -211,19 +248,19 @@ void March(float3 dir, float tStart, float tEnd, float jitter, inout float3 radi
 struct TraceOutput
 {
     float4 color : SV_Target0;
-    float distance : SV_Target1;
+    float2 distance : SV_Target1;
 };
 
 TraceOutput TracePS(float4 position : SV_Position)
 {
-    int2 tp = int2(position.xy);
-    int2 hp = min(DepthInfo.w > 0 ? tp * 2 + int2(Temporal.zw) : tp, int2(HistorySize.xy) - 1);
+    int2 hp = min(int2(position.xy), int2(HistorySize.xy) - 1);
     float3 dir = ViewRay((hp + 0.5) * HistorySize.zw);
     float scene = SceneDist.Load(int3(hp, 0));
     bool sky = scene < 0;
     float3 radiance = 0;
     float transmittance = 1;
     float meanDistance = DepthInfo.z;
+    float front = -1;
     float tStart, tEnd;
     if (RayLayer(dir.y, tStart, tEnd))
     {
@@ -232,7 +269,7 @@ TraceOutput TracePS(float4 position : SV_Position)
             tEnd = min(tEnd, scene);
         meanDistance = min(tStart, DepthInfo.z);
         if (tEnd > tStart)
-            March(dir, tStart, tEnd, InterleavedGradientNoise(float2(hp)), radiance, transmittance, meanDistance);
+            March(dir, tStart, tEnd, DirectionNoise(dir), radiance, transmittance, meanDistance, front);
     }
     float alpha = 1 - transmittance;
     float3 color = alpha > 1e-4 ? radiance / alpha : 0;
@@ -241,6 +278,22 @@ TraceOutput TracePS(float4 position : SV_Position)
     alpha *= saturate(fade * 1.5);
     TraceOutput output;
     output.color = float4(color * alpha, EncodeT(1 - alpha, sky));
-    output.distance = meanDistance;
+    output.distance = float2(meanDistance, front < 0 ? meanDistance : front);
     return output;
+}
+
+static const float k_shadow_size = 256;
+static const int k_shadow_steps = 12;
+
+float ShadowMapPS(float4 position : SV_Position) : SV_Target
+{
+    float2 xz = Shadow.xy + (position.xy / k_shadow_size - 0.5) / Shadow.z;
+    float stepLen = Layer.z / max(SunDir.y, 0.05) / k_shadow_steps;
+    float depth = 0;
+    [loop] for (int k = 0; k < k_shadow_steps; ++k)
+    {
+        float3 p = float3(xz.x, Layer.x, xz.y) + SunDir.xyz * (stepLen * (k + 0.5));
+        depth += SampleCloud(p, saturate((p.y - Layer.x) * Layer.w), 0, 0, false, true).density;
+    }
+    return exp(-depth * stepLen * Shape.y);
 }

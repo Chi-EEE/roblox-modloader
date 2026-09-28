@@ -11,7 +11,7 @@
 namespace clouds
 {
 	static constexpr std::uint32_t k_cache_magic = 0x434C4D52;
-	static constexpr std::uint32_t k_cache_version = 2;
+	static constexpr std::uint32_t k_cache_version = 3;
 
 	static std::uint32_t hash(const std::uint32_t x, const std::uint32_t y, const std::uint32_t z, const std::uint32_t salt)
 	{
@@ -235,7 +235,7 @@ namespace clouds
 			const float fbm = worley(x, y, z, 8, 31) * 0.625f + worley(x, y, z, 16, 32) * 0.25f + worley(x, y, z, 32, 33) * 0.125f;
 			out[0] = to_byte(remap(perlin_worley, fbm - 1.f, 1.f, 0.f, 1.f));
 		});
-		set.detail = build(32, 32, 1, [](const float x, const float y, const float z, std::uint8_t* out) {
+		set.detail = build(64, 64, 1, [](const float x, const float y, const float z, std::uint8_t* out) {
 			out[0] = to_byte(worley(x, y, z, 4, 41) * 0.625f + worley(x, y, z, 8, 42) * 0.25f + worley(x, y, z, 16, 43) * 0.125f);
 		});
 		set.weather = build(512, 1, 2, [](const float x, const float y, float, std::uint8_t* out) {
@@ -301,7 +301,7 @@ namespace clouds
 		if (!file || !file.read(reinterpret_cast<char*>(header.data()), sizeof(header)) || header[0] != k_cache_magic || header[1] != k_cache_version)
 			return false;
 		return read_texture(file, set.shape) && read_texture(file, set.detail) && read_texture(file, set.weather) && matches(set.shape, 128, 128, 1) &&
-		    matches(set.detail, 32, 32, 1) && matches(set.weather, 512, 1, 2);
+		    matches(set.detail, 64, 64, 1) && matches(set.weather, 512, 1, 2);
 	}
 
 	static void save(const std::filesystem::path& path, const NoiseSet& set)

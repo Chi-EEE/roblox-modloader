@@ -37,12 +37,14 @@ public:
 		});
 		m_renderer = std::make_unique<clouds::CloudRenderer>(paths().dir("cache") / "noise.bin", m_log, m_teardown != 0);
 		m_prepare = rml::graphics::add_render_callback(RenderStage::SkyPrepare, [this](RenderPassContext& pass) { m_renderer->prepare(pass); });
+		m_render = rml::graphics::add_render_callback(RenderStage::PostOpaque, [this](RenderPassContext& pass) { m_renderer->render(pass); });
 		m_composite = rml::graphics::add_render_callback(RenderStage::Sky, [this](RenderPassContext& pass) { m_renderer->composite(pass); });
 	}
 
 	void on_unload() override
 	{
 		rml::graphics::remove_render_callback(m_prepare);
+		rml::graphics::remove_render_callback(m_render);
 		rml::graphics::remove_render_callback(m_composite);
 		rml::graphics::remove_render_callback(m_teardown);
 		rml::graphics::set_sky_stage_enabled(false);
@@ -53,6 +55,7 @@ private:
 	std::shared_ptr<spdlog::logger> m_log;
 	std::unique_ptr<clouds::CloudRenderer> m_renderer;
 	rml::graphics::RenderCallbackId m_prepare{};
+	rml::graphics::RenderCallbackId m_render{};
 	rml::graphics::RenderCallbackId m_composite{};
 	rml::graphics::RenderCallbackId m_teardown{};
 };

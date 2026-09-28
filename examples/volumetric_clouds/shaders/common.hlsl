@@ -2,7 +2,7 @@ cbuffer CloudFrame : register(b2)
 {
     row_major float4x4 InvViewProj;
     row_major float4x4 PrevViewProj;
-    row_major float4x4 PrevInvViewProj;
+    row_major float4x4 ViewProj;
     float4 CameraPos;
     float4 CameraDelta;
     float4 SunDir;
@@ -16,13 +16,14 @@ cbuffer CloudFrame : register(b2)
     float4 Wind;
     float4 Weather;
     float4 Albedo;
-    float4 TraceSize;
     float4 HistorySize;
     float4 ScreenSize;
     float4 Params;
     float4 Temporal;
     float4 DepthInfo;
     float4 Motion;
+    float4 Shadow;
+    float4 Advect;
 };
 
 static const float PI = 3.14159265;

@@ -42,8 +42,21 @@ void rml::Hooks::clouds_composite(void* clouds, RBX::Graphics::DeviceContext* co
 
 	auto* scene_manager = registry.scene_manager();
 	const auto* targets = scene_manager ? scene_manager->get_main_render_targets() : nullptr;
-	graphics::RenderPassContext pass{context, targets ? targets->scene_fb.get() : nullptr, registry.device(), static_cast<const RBX::Graphics::RenderCamera*>(camera), scene_manager, graphics::RenderStage::Sky, globals, nullptr, registry.capture_mode()};
-	if (registry.run_render_callbacks(pass) > 0 && globals)
+	auto* target = targets ? targets->scene_fb.get() : nullptr;
+	graphics::RenderPassContext pass{context, target, registry.device(), static_cast<const RBX::Graphics::RenderCamera*>(camera), scene_manager, graphics::RenderStage::PostOpaque, globals, scene_depth_of(scene_manager), registry.capture_mode()};
+
+	std::size_t invoked = 0;
+	if (target && context->get_framebuffer() == target && registry.has_render_callbacks(graphics::RenderStage::PostOpaque))
+	{
+		context->end_pass();
+		invoked += registry.run_render_callbacks(pass);
+		context->begin_pass(target, RBX::Graphics::PassClear::All, RBX::Graphics::PassClear::All, nullptr, nullptr, 0);
+	}
+
+	pass.stage = graphics::RenderStage::Sky;
+	pass.scene_depth = nullptr;
+	invoked += registry.run_render_callbacks(pass);
+	if (invoked > 0 && globals)
 		context->bind_buffer_data(0, globals, static_cast<unsigned>(sizeof(RBX::Graphics::GlobalShaderData)));
 }
 

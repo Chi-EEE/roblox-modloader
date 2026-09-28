@@ -78,6 +78,7 @@ namespace clouds
 		    .property("AmbientIntensity", &Self::get<&S::ambient_intensity>, &Self::set<&S::ambient_intensity>, "Lighting")
 		    .property("Powder", &Self::get<&S::powder>, &Self::set<&S::powder>, "Lighting")
 		    .property("MultiScattering", &Self::get<&S::multi_scattering>, &Self::set<&S::multi_scattering>, "Lighting")
+		    .property("ShadowStrength", &Self::get<&S::shadow_strength>, &Self::set<&S::shadow_strength>, "Lighting")
 		    .property("Quality", &Self::get<&S::quality>, &Self::set<&S::quality>, "Behavior")
 		    .property("Seed", &Self::get<&S::seed>, &Self::set<&S::seed>, "Behavior")
 		    .function("ApplyPreset", &Self::apply_preset)

@@ -29,6 +29,7 @@ namespace clouds
 		float ambient_intensity{1.f};
 		float powder{0.25f};
 		float multi_scattering{0.5f};
+		float shadow_strength{0.6f};
 		float horizon_fade{60000.f};
 		int quality{3};
 		int seed{0};

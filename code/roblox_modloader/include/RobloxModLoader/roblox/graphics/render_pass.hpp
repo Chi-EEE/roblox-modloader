@@ -33,6 +33,7 @@ namespace rml::graphics
 	enum class RenderStage : std::uint8_t
 	{
 		SkyPrepare,
+		PostOpaque,
 		Sky,
 		Scene
 	};

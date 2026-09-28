@@ -26,8 +26,9 @@ namespace clouds
 	static constexpr float k_camera_cut_distance = 250.f;
 	static constexpr float k_detail_drift = 0.35f;
 	static constexpr float k_shear = 0.35f;
-	static constexpr Quality k_qualities[] = {{32, 3, 2, true, 0.35f}, {48, 4, 2, true, 0.35f}, {48, 4, 3, false, 0.12f}, {96, 6, 3, false, 0.1f}};
-	static constexpr int k_pattern[4][2] = {{0, 0}, {1, 1}, {1, 0}, {0, 1}};
+	static constexpr std::uint32_t k_shadow_size = 256;
+	static constexpr float k_shadow_extent = 32768.f;
+	static constexpr Quality k_qualities[] = {{32, 3, 2, 0.35f}, {48, 4, 2, 0.35f}, {64, 4, 3, 0.35f}, {96, 6, 3, 0.3f}};
 
 	static SamplerState linear_wrap()
 	{
@@ -37,6 +38,11 @@ namespace clouds
 	static SamplerState point_clamp()
 	{
 		return SamplerState::make(SamplerState::Filter_Point, SamplerState::Address_Clamp);
+	}
+
+	static SamplerState linear_clamp()
+	{
+		return SamplerState::make(SamplerState::Filter_Linear, SamplerState::Address_Clamp);
 	}
 
 	static void set4(float (&out)[4], const float x, const float y, const float z, const float w)
@@ -210,6 +216,11 @@ namespace clouds
 			programs.reconstruct = make_program(device, "", shaders::reconstruct, "ReconstructPS", "rml_clouds_reconstruct");
 			programs.composite_sky = make_program(device, "#define RML_COMPOSITE_SKY 1\n", shaders::composite, "CompositePS", "rml_clouds_composite_sky");
 			programs.composite_geometry = make_program(device, "#define RML_COMPOSITE_SKY 0\n", shaders::composite, "CompositePS", "rml_clouds_composite_geometry");
+			programs.cloud_depth = make_program(device, "", shaders::composite, "CloudDepthPS", "rml_clouds_depth_write");
+			programs.shadow_map = make_program(device, "", shaders::trace, "ShadowMapPS", "rml_clouds_shadow_map");
+			programs.shadow = make_program(device, "", shaders::composite, "ShadowPS", "rml_clouds_shadow");
+			m_gpu.shadow = target(device, Texture::Format::R16F, k_shadow_size, k_shadow_size, "rml_clouds_shadow");
+			m_gpu.shadow_fb = framebuffer(device, {m_gpu.shadow}, "rml_clouds_shadow");
 			m_gpu.layout = device.create_vertex_layout_impl({}, {}, "rml_clouds");
 			m_gpu.geometry = device.create_geometry_impl(m_gpu.layout, nullptr, 0, nullptr, 0, "rml_clouds");
 			m_log->info("Cloud programs ready (trace buffer mask 0x{:X}, texture mask 0x{:X})", programs.trace->buffer_mask, programs.trace->texture_mask);
@@ -239,33 +250,31 @@ namespace clouds
 		return true;
 	}
 
-	void CloudRenderer::ensure_targets(Device& device, const std::uint32_t width, const std::uint32_t height, const bool checkerboard)
+	void CloudRenderer::ensure_targets(Device& device, const std::uint32_t width, const std::uint32_t height)
 	{
 		auto& current = m_gpu.targets;
-		if (current.width == width && current.height == height && current.checkerboard == checkerboard && current.trace_fb)
+		if (current.width == width && current.height == height && current.trace_fb)
 			return;
 
 		Targets targets;
 		targets.width = width;
 		targets.height = height;
-		targets.checkerboard = checkerboard;
 		targets.history_width = (width + 1) / 2;
 		targets.history_height = (height + 1) / 2;
-		targets.trace_width = checkerboard ? (targets.history_width + 1) / 2 : targets.history_width;
-		targets.trace_height = checkerboard ? (targets.history_height + 1) / 2 : targets.history_height;
 		targets.scene_distance = target(device, Texture::Format::R32F, targets.history_width, targets.history_height, "rml_clouds_scene_distance");
 		targets.scene_distance_fb = framebuffer(device, {targets.scene_distance}, "rml_clouds_scene_distance");
-		targets.trace_color = target(device, Texture::Format::RGBA16F, targets.trace_width, targets.trace_height, "rml_clouds_trace_color");
-		targets.trace_distance = target(device, Texture::Format::R32F, targets.trace_width, targets.trace_height, "rml_clouds_trace_distance");
+		targets.trace_color = target(device, Texture::Format::RGBA16F, targets.history_width, targets.history_height, "rml_clouds_trace_color");
+		targets.trace_distance = target(device, Texture::Format::RG32F, targets.history_width, targets.history_height, "rml_clouds_trace_distance");
 		targets.trace_fb = framebuffer(device, {targets.trace_color, targets.trace_distance}, "rml_clouds_trace");
+		targets.history_front = target(device, Texture::Format::R32F, targets.history_width, targets.history_height, "rml_clouds_history_front");
 		for (std::size_t i = 0; i < 2; ++i)
 		{
 			targets.history[i] = target(device, Texture::Format::RGBA16F, targets.history_width, targets.history_height, "rml_clouds_history");
-			targets.history_fb[i] = framebuffer(device, {targets.history[i]}, "rml_clouds_history");
+			targets.history_fb[i] = framebuffer(device, {targets.history[i], targets.history_front}, "rml_clouds_history");
 		}
 		current = std::move(targets);
 		m_history_valid = false;
-		m_log->info("Cloud targets {}x{} (trace {}x{}, history {}x{})", width, height, current.trace_width, current.trace_height, current.history_width, current.history_height);
+		m_log->info("Cloud targets {}x{} (trace {}x{})", width, height, current.history_width, current.history_height);
 	}
 
 	void CloudRenderer::update_frame(const CloudSettings& settings, const GlobalShaderData& globals, const Quality& quality, const Texture* depth)
@@ -289,7 +298,7 @@ namespace clouds
 		m_detail_offset[0] += velocity.x * k_detail_drift * dt;
 		m_detail_offset[1] += velocity.z * k_detail_drift * dt;
 		m_shape_evolution += settings.evolution * (3.0 + speed * 0.05) * dt;
-		m_detail_evolution += settings.evolution * (12.0 + speed * 0.2) * dt;
+		m_detail_evolution += settings.evolution * (5.0 + speed * 0.06) * dt;
 		const float shear = settings.thickness * k_shear * std::min(speed / 60.f, 1.f);
 
 		RBX::Vector3 sun = -xyz(globals.lamp0_dir);
@@ -306,16 +315,13 @@ namespace clouds
 		const auto& targets = m_gpu.targets;
 		const float history_width = static_cast<float>(targets.history_width);
 		const float history_height = static_cast<float>(targets.history_height);
-		const float trace_width = static_cast<float>(targets.trace_width);
-		const float trace_height = static_cast<float>(targets.trace_height);
 		const float width = static_cast<float>(targets.width);
 		const float height = static_cast<float>(targets.height);
-		const auto& pattern = k_pattern[m_frame_index & 3];
 
 		auto& f = m_frame;
 		f.inv_view_proj = inverse(view_proj);
 		f.prev_view_proj = prev_view_proj;
-		f.prev_inv_view_proj = inverse(prev_view_proj);
+		f.view_proj = view_proj;
 		set4(f.camera_pos, camera.x, camera.y, camera.z, 0.5f / k_planet_radius);
 		set4(f.camera_delta, delta.x, delta.y, delta.z, 0.f);
 		set4(f.sun_dir, sun.x, sun.y, sun.z, 0.f);
@@ -329,15 +335,17 @@ namespace clouds
 		set4(f.wind, static_cast<float>(m_shape_offset[0]), static_cast<float>(m_shape_offset[1]), static_cast<float>(m_detail_offset[0]), static_cast<float>(m_detail_offset[1]));
 		set4(f.weather, seed_x + static_cast<float>(m_shape_offset[0]), seed_z + static_cast<float>(m_shape_offset[1]), k_weather_frequency, ms);
 		set4(f.albedo, albedo.r, albedo.g, albedo.b, 0.f);
-		set4(f.trace_size, trace_width, trace_height, 1.f / trace_width, 1.f / trace_height);
 		set4(f.history_size, history_width, history_height, 1.f / history_width, 1.f / history_height);
 		set4(f.screen_size, width, height, 1.f / width, 1.f / height);
-		set4(f.params, static_cast<float>(m_frame_index & 1023), static_cast<float>(quality.steps), static_cast<float>(quality.light_steps), static_cast<float>(quality.octaves));
-		set4(f.temporal, m_history_valid && !cut ? 1.f : 0.f, quality.blend, quality.checkerboard ? static_cast<float>(pattern[0]) : 0.f, quality.checkerboard ? static_cast<float>(pattern[1]) : 0.f);
+		set4(f.params, 0.f, static_cast<float>(quality.steps), static_cast<float>(quality.light_steps), static_cast<float>(quality.octaves));
+		set4(f.temporal, m_history_valid && !cut ? 1.f : 0.f, quality.blend, 0.f, 0.f);
 		const float depth_width = depth ? static_cast<float>(std::min(depth->width, targets.width)) : width;
 		const float depth_height = depth ? static_cast<float>(std::min(depth->height, targets.height)) : height;
-		set4(f.depth_info, depth_width, depth_height, std::max(settings.horizon_fade * 3.f, 50000.f), quality.checkerboard ? 1.f : 0.f);
+		set4(f.depth_info, depth_width, depth_height, std::max(settings.horizon_fade * 3.f, 50000.f), 0.f);
 		set4(f.motion, static_cast<float>(m_shape_evolution), static_cast<float>(m_detail_evolution), wind_dir.x * shear, wind_dir.z * shear);
+		const float shadow_texel = k_shadow_extent / static_cast<float>(k_shadow_size);
+		set4(f.shadow, std::floor(camera.x / shadow_texel) * shadow_texel, std::floor(camera.z / shadow_texel) * shadow_texel, 1.f / k_shadow_extent, settings.shadow_strength);
+		set4(f.advect, velocity.x * dt, 0.f, velocity.z * dt, 0.f);
 
 		m_prev_view_proj = view_proj;
 		m_prev_camera = camera;
@@ -367,6 +375,19 @@ namespace clouds
 		context.end_pass();
 	}
 
+	void CloudRenderer::run_shadow(DeviceContext& context)
+	{
+		context.begin_pass(m_gpu.shadow_fb.get(), 0, PassClear::Color0, nullptr, nullptr, 0);
+		context.set_render_state(RasterizerState::make(RasterizerState::Cull_None), BlendState::opaque(), DepthState::make(DepthState::Function_Always, false));
+		context.bind_program(m_gpu.programs.shadow_map.get());
+		context.bind_texture(0, m_gpu.shape.get(), linear_wrap());
+		context.bind_texture(1, m_gpu.detail.get(), linear_wrap());
+		context.bind_texture(2, m_gpu.weather.get(), linear_wrap());
+		context.bind_buffer_data(k_frame_slot, &m_frame, k_frame_size);
+		draw(context);
+		context.end_pass();
+	}
+
 	void CloudRenderer::run_trace(DeviceContext& context)
 	{
 		const auto& targets = m_gpu.targets;
@@ -386,7 +407,7 @@ namespace clouds
 	{
 		const auto& targets = m_gpu.targets;
 		const auto next = m_history_index ^ 1u;
-		context.begin_pass(targets.history_fb[next].get(), 0, PassClear::Color0, nullptr, nullptr, 0);
+		context.begin_pass(targets.history_fb[next].get(), 0, PassClear::Color0 | PassClear::Color1, nullptr, nullptr, 0);
 		context.set_render_state(RasterizerState::make(RasterizerState::Cull_None), BlendState::opaque(), DepthState::make(DepthState::Function_Always, false));
 		context.bind_program(m_gpu.programs.reconstruct.get());
 		context.bind_texture(0, targets.trace_color.get(), point_clamp());
@@ -402,11 +423,12 @@ namespace clouds
 
 	void CloudRenderer::prepare(rml::graphics::RenderPassContext& pass)
 	{
+		m_pending.reset();
 		m_ready = false;
 		if (pass.capture_mode != 0 || !pass.device || !pass.context || !pass.scene_manager || !pass.globals)
 			return;
 
-		const auto settings = CloudRegistry::instance().active();
+		auto settings = CloudRegistry::instance().active();
 		if (!settings)
 		{
 			m_active_logged = false;
@@ -417,32 +439,51 @@ namespace clouds
 		{
 			if (!ensure_device(*pass.device) || !ensure_noise(*pass.device))
 				return;
+			m_pending = std::move(settings);
+			pass.replaces_engine_clouds = true;
+		}
+		catch (const std::exception& e)
+		{
+			m_log->error("Cloud setup failed: {}", e.what());
+			m_failed = true;
+			release();
+		}
+	}
 
+	void CloudRenderer::render(rml::graphics::RenderPassContext& pass)
+	{
+		if (!m_pending || !pass.context || !pass.scene_manager || !pass.globals)
+			return;
+		const CloudSettings settings = *m_pending;
+		m_pending.reset();
+
+		try
+		{
 			const auto* scene = pass.scene_manager;
 			const auto width = scene->drs_width ? scene->drs_width : scene->view_width;
 			const auto height = scene->drs_height ? scene->drs_height : scene->view_height;
 			if (!width || !height)
 				return;
 
-			const auto& quality = k_qualities[std::clamp(settings->quality, 1, 4) - 1];
-			ensure_targets(*pass.device, width, height, quality.checkerboard);
-			update_frame(*settings, *pass.globals, quality, pass.scene_depth);
+			const auto& quality = k_qualities[std::clamp(settings.quality, 1, 4) - 1];
+			ensure_targets(*m_device, width, height);
+			update_frame(settings, *pass.globals, quality, pass.scene_depth);
 
 			auto& context = *pass.context;
 			context.begin_group("VolumetricClouds", 0);
 			run_depth(context, pass.scene_depth);
+			if (m_frame.shadow[3] > 0.f)
+				run_shadow(context);
 			run_trace(context);
 			run_reconstruct(context);
 			context.end_group();
-			++m_frame_index;
 			m_ready = true;
-			pass.replaces_engine_clouds = true;
 
 			if (!m_active_logged)
 			{
 				m_active_logged = true;
 				const auto& g = *pass.globals;
-				m_log->info("Clouds active: {}x{}, quality {}, depth samples {}", width, height, settings->quality, pass.scene_depth ? pass.scene_depth->samples : 0);
+				m_log->info("Clouds active: {}x{}, quality {}, depth samples {}", width, height, settings.quality, pass.scene_depth ? pass.scene_depth->samples : 0);
 				m_log->info("Lighting: sun dir ({:.3f}, {:.3f}, {:.3f}) color ({:.3f}, {:.3f}, {:.3f}), ambient ({:.3f}, {:.3f}, {:.3f}), fog ({:.3f}, {:.3f}, {:.3f})",
 				    g.lamp0_dir.x, g.lamp0_dir.y, g.lamp0_dir.z, g.lamp0_color.x, g.lamp0_color.y, g.lamp0_color.z, g.ambient_color.x, g.ambient_color.y, g.ambient_color.z, g.fog_color.x, g.fog_color.y, g.fog_color.z);
 			}
@@ -458,19 +499,42 @@ namespace clouds
 	void CloudRenderer::composite(rml::graphics::RenderPassContext& pass)
 	{
 		if (!m_ready || !pass.context)
+		{
+			if (m_pending && !m_stage_warned)
+			{
+				m_stage_warned = true;
+				m_log->warn("Clouds skipped: the post-opaque stage did not run this frame");
+			}
+			m_pending.reset();
 			return;
+		}
 		m_ready = false;
 
 		auto& context = *pass.context;
+		const auto& targets = m_gpu.targets;
 		const auto raster = RasterizerState::make(RasterizerState::Cull_None);
 		const auto blend = BlendState::make(BlendState::Factor_SrcAlpha, BlendState::Factor_InvSrcAlpha, BlendState::Factor_Zero, BlendState::Factor_One);
-		context.bind_texture(0, m_gpu.targets.history[m_history_index].get(), point_clamp());
 		context.bind_buffer_data(k_frame_slot, &m_frame, k_frame_size);
+		context.bind_texture(2, targets.scene_distance.get(), point_clamp());
+		if (m_frame.shadow[3] > 0.f)
+		{
+			context.bind_texture(3, m_gpu.shadow.get(), linear_clamp());
+			context.set_render_state(raster, BlendState::make(BlendState::Factor_Zero, BlendState::Factor_InvSrcAlpha, BlendState::Factor_Zero, BlendState::Factor_One), DepthState::make(DepthState::Function_Less, false));
+			context.bind_program(m_gpu.programs.shadow.get());
+			draw(context);
+		}
+
+		context.bind_texture(0, targets.history[m_history_index].get(), point_clamp());
 		context.set_render_state(raster, blend, DepthState::make(DepthState::Function_GreaterEqual, false));
 		context.bind_program(m_gpu.programs.composite_sky.get());
 		draw(context);
 		context.set_render_state(raster, blend, DepthState::make(DepthState::Function_Less, false));
 		context.bind_program(m_gpu.programs.composite_geometry.get());
+		draw(context);
+
+		context.bind_texture(1, targets.history_front.get(), point_clamp());
+		context.set_render_state(raster, BlendState::make(BlendState::Factor_One, BlendState::Factor_Zero, BlendState::Color_None), DepthState::make(DepthState::Function_Greater, true));
+		context.bind_program(m_gpu.programs.cloud_depth.get());
 		draw(context);
 	}
 }

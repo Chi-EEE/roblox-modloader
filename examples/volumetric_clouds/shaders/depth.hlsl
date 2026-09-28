@@ -26,8 +26,8 @@ float DepthPS(float4 position : SV_Position) : SV_Target
         if (z <= 0)
             continue;
         float2 uv = (p + 0.5) * ScreenSize.zw;
-        float4 w = mul(PrevInvViewProj, float4(uv.x * 2 - 1, 1 - uv.y * 2, z, 1));
-        farthest = max(farthest, length(w.xyz / w.w - CameraDelta.xyz));
+        float4 w = mul(InvViewProj, float4(uv.x * 2 - 1, 1 - uv.y * 2, z, 1));
+        farthest = max(farthest, length(w.xyz / w.w));
     }
     return farthest;
 }

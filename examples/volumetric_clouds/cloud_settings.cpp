@@ -28,6 +28,7 @@ namespace clouds
 		ambient_intensity = std::clamp(ambient_intensity, 0.f, 4.f);
 		powder = unit(powder);
 		multi_scattering = unit(multi_scattering);
+		shadow_strength = unit(shadow_strength);
 		horizon_fade = std::clamp(horizon_fade, 1000.f, 1000000.f);
 		quality = std::clamp(quality, 1, 4);
 	}

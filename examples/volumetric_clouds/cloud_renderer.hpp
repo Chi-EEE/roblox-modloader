@@ -25,7 +25,7 @@ namespace clouds
 	{
 		Matrix inv_view_proj;
 		Matrix prev_view_proj;
-		Matrix prev_inv_view_proj;
+		Matrix view_proj;
 		float camera_pos[4];
 		float camera_delta[4];
 		float sun_dir[4];
@@ -39,13 +39,14 @@ namespace clouds
 		float wind[4];
 		float weather[4];
 		float albedo[4];
-		float trace_size[4];
 		float history_size[4];
 		float screen_size[4];
 		float params[4];
 		float temporal[4];
 		float depth_info[4];
 		float motion[4];
+		float shadow[4];
+		float advect[4];
 	};
 
 	static_assert(sizeof(CloudFrame) % 16 == 0);
@@ -55,7 +56,6 @@ namespace clouds
 		int steps;
 		int light_steps;
 		int octaves;
-		bool checkerboard;
 		float blend;
 	};
 
@@ -65,6 +65,7 @@ namespace clouds
 		CloudRenderer(std::filesystem::path cache_file, std::shared_ptr<spdlog::logger> log, bool device_teardown_notified);
 
 		void prepare(rml::graphics::RenderPassContext& pass);
+		void render(rml::graphics::RenderPassContext& pass);
 		void composite(rml::graphics::RenderPassContext& pass);
 		void on_device_destroyed(RBX::Graphics::Device& device);
 
@@ -77,23 +78,24 @@ namespace clouds
 			std::shared_ptr<RBX::Graphics::ShaderProgram> reconstruct;
 			std::shared_ptr<RBX::Graphics::ShaderProgram> composite_sky;
 			std::shared_ptr<RBX::Graphics::ShaderProgram> composite_geometry;
+			std::shared_ptr<RBX::Graphics::ShaderProgram> cloud_depth;
+			std::shared_ptr<RBX::Graphics::ShaderProgram> shadow_map;
+			std::shared_ptr<RBX::Graphics::ShaderProgram> shadow;
 		};
 
 		struct Targets
 		{
 			std::uint32_t width{};
 			std::uint32_t height{};
-			bool checkerboard{};
 			std::uint32_t history_width{};
 			std::uint32_t history_height{};
-			std::uint32_t trace_width{};
-			std::uint32_t trace_height{};
 			std::shared_ptr<RBX::Graphics::Texture> scene_distance;
 			std::shared_ptr<RBX::Graphics::Framebuffer> scene_distance_fb;
 			std::shared_ptr<RBX::Graphics::Texture> trace_color;
 			std::shared_ptr<RBX::Graphics::Texture> trace_distance;
 			std::shared_ptr<RBX::Graphics::Framebuffer> trace_fb;
 			std::array<std::shared_ptr<RBX::Graphics::Texture>, 2> history;
+			std::shared_ptr<RBX::Graphics::Texture> history_front;
 			std::array<std::shared_ptr<RBX::Graphics::Framebuffer>, 2> history_fb;
 		};
 
@@ -105,14 +107,17 @@ namespace clouds
 			std::shared_ptr<RBX::Graphics::Texture> shape;
 			std::shared_ptr<RBX::Graphics::Texture> detail;
 			std::shared_ptr<RBX::Graphics::Texture> weather;
+			std::shared_ptr<RBX::Graphics::Texture> shadow;
+			std::shared_ptr<RBX::Graphics::Framebuffer> shadow_fb;
 			Targets targets;
 		};
 
 		bool ensure_device(RBX::Graphics::Device& device);
 		bool ensure_noise(RBX::Graphics::Device& device);
-		void ensure_targets(RBX::Graphics::Device& device, std::uint32_t width, std::uint32_t height, bool checkerboard);
+		void ensure_targets(RBX::Graphics::Device& device, std::uint32_t width, std::uint32_t height);
 		void update_frame(const CloudSettings& settings, const RBX::Graphics::GlobalShaderData& globals, const Quality& quality, const RBX::Graphics::Texture* depth);
 		void run_depth(RBX::Graphics::DeviceContext& context, RBX::Graphics::Texture* depth);
+		void run_shadow(RBX::Graphics::DeviceContext& context);
 		void run_trace(RBX::Graphics::DeviceContext& context);
 		void run_reconstruct(RBX::Graphics::DeviceContext& context);
 		void draw(RBX::Graphics::DeviceContext& context) const;
@@ -129,8 +134,9 @@ namespace clouds
 		CloudFrame m_frame{};
 		std::uint32_t m_history_index{};
 		bool m_history_valid{};
+		std::optional<CloudSettings> m_pending;
 		bool m_ready{};
-		std::uint64_t m_frame_index{};
+		bool m_stage_warned{};
 		std::optional<std::chrono::steady_clock::time_point> m_last_time;
 		std::optional<Matrix> m_prev_view_proj;
 		RBX::Vector3 m_prev_camera;

@@ -167,6 +167,12 @@ namespace rml::graphics
 		return invoked;
 	}
 
+	bool GraphicsRegistry::has_render_callbacks(const RenderStage stage)
+	{
+		std::lock_guard lock(m_callbacks_mutex);
+		return std::ranges::any_of(m_callbacks, [stage](const Entry& entry) { return entry.stage == stage; });
+	}
+
 	void GraphicsRegistry::begin_scene(RBX::Graphics::SceneManager* scene_manager, const bool engine_clouds, const std::uint32_t capture_mode)
 	{
 		set_scene_manager(scene_manager);
