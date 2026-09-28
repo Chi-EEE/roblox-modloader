@@ -112,9 +112,6 @@ add_library(RobloxModLoader::RobloxModLoader ALIAS RobloxModLoader)
 target_include_directories(RobloxModLoader INTERFACE
         "$<BUILD_INTERFACE:${ROBLOX_MODLOADER_INCLUDE_DIR}>"
         "$<INSTALL_INTERFACE:include>"
-        "$<BUILD_INTERFACE:${ROBLOX_MODLOADER_ROOT_DIR}/libs/third_party/g3d/include>"
-        "$<BUILD_INTERFACE:${ROBLOX_MODLOADER_ROOT_DIR}/libs/third_party/bullet/include>"
-        "$<BUILD_INTERFACE:${ROBLOX_MODLOADER_ROOT_DIR}/libs/third_party/rbxg3d/include>"
         "$<BUILD_INTERFACE:${spdlog_SOURCE_DIR}/include>"
         "$<BUILD_INTERFACE:${tomlplusplus_SOURCE_DIR}/include>"
         "$<BUILD_INTERFACE:${nlohmann_json_SOURCE_DIR}/include>"
@@ -122,6 +119,12 @@ target_include_directories(RobloxModLoader INTERFACE
         "$<BUILD_INTERFACE:${LUAU_SOURCE_DIR}/Ast/include>"
         "$<BUILD_INTERFACE:${LUAU_SOURCE_DIR}/VM/include>"
         "$<BUILD_INTERFACE:${LUAU_SOURCE_DIR}/Common/include>"
+)
+
+target_include_directories(RobloxModLoader SYSTEM INTERFACE
+        "$<BUILD_INTERFACE:${ROBLOX_MODLOADER_ROOT_DIR}/libs/third_party/g3d/include>"
+        "$<BUILD_INTERFACE:${ROBLOX_MODLOADER_ROOT_DIR}/libs/third_party/bullet/include>"
+        "$<BUILD_INTERFACE:${ROBLOX_MODLOADER_ROOT_DIR}/libs/third_party/rbxg3d/include>"
 )
 
 target_link_libraries(RobloxModLoader INTERFACE
