@@ -1,12 +1,15 @@
 #pragma once
 #include "object.hpp"
 
+#include "RobloxModLoader/rml_export.hpp"
 #include "RobloxModLoader/util/layout_assert.hpp"
 
 #include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace RBX
@@ -35,7 +38,7 @@ namespace RBX
 		void* reserved;
 	};
 
-	class Instance : public Object
+	class RML_EXPORT Instance : public Object
 	{
 	public:
 		virtual bool styled_properties_read() const
@@ -335,6 +338,34 @@ namespace RBX
 		}
 
 		std::string compute_full_name();
+
+		[[nodiscard]] std::size_t num_children() const;
+		[[nodiscard]] Instance* get_child(std::size_t index);
+		[[nodiscard]] const Instance* get_child(std::size_t index) const;
+		[[nodiscard]] const Instance* find_first_child_by_name(std::string_view find_name) const;
+		[[nodiscard]] Instance* find_first_child_by_name(std::string_view find_name);
+		[[nodiscard]] const Instance* find_first_child_of_type(std::string_view class_name) const;
+		[[nodiscard]] Instance* find_first_child_of_type(std::string_view class_name);
+
+		template<typename C>
+		[[nodiscard]] const C* find_first_child_of_type() const
+		{
+			if (children)
+			{
+				for (const auto& child : *children)
+				{
+					if (child && child->get_descriptor().is_a(C::class_name.data()))
+						return static_cast<const C*>(child.get());
+				}
+			}
+			return nullptr;
+		}
+
+		template<typename C>
+		[[nodiscard]] C* find_first_child_of_type()
+		{
+			return const_cast<C*>(std::as_const(*this).template find_first_child_of_type<C>());
+		}
 	};
 
 	RML_LAYOUT_DIAGNOSTIC_PUSH()
