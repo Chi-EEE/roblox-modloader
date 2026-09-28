@@ -107,7 +107,7 @@ namespace rml::reflection
 			reinterpret_cast<RBX::Reflection::Descriptor*>(storage)->attributes.is_deprecated = true;
 	}
 
-	static void publish_metadata(const std::string& class_name, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties)
+	static void publish_metadata_unguarded(const std::string& class_name, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties)
 	{
 		auto& registry = MetadataRegistry::instance();
 		if (hints.insert_category)
@@ -123,6 +123,22 @@ namespace rml::reflection
 		}
 		if (owned_class || !metadata.properties.empty())
 			registry.add(std::move(metadata));
+	}
+
+	static void publish_metadata(const std::string& class_name, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties)
+	{
+		try
+		{
+			publish_metadata_unguarded(class_name, owned_class, hints, properties);
+		}
+		catch (const std::exception& e)
+		{
+			RML_ERROR("metadata for {} could not be published: {}", class_name, e.what());
+		}
+		catch (...)
+		{
+			RML_ERROR("metadata for {} could not be published: unknown exception", class_name);
+		}
 	}
 
 	ClassRegistry& ClassRegistry::instance()

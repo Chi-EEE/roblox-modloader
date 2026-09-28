@@ -199,7 +199,7 @@ namespace rml::reflection
 			m_pending.push_back(std::move(metadata));
 		}
 		if (g_init_gate && g_init_gate->is_open())
-			flush();
+			flush(false);
 		else
 			request_flush();
 	}
@@ -233,11 +233,25 @@ namespace rml::reflection
 
 	void MetadataRegistry::on_tree_loaded(RBX::Instance* root)
 	{
-		if (m_disabled.load(std::memory_order_acquire) || !root)
+		std::lock_guard flush_lock(m_flush_mutex);
+		if (m_disabled.load(std::memory_order_acquire))
 			return;
-		if (!m_root && !adopt_root(root))
-			return;
-		flush();
+		if (!m_root)
+		{
+			const auto* metadata_class = ClassRegistry::instance().find_engine_class("ReflectionMetadata");
+			if (!root || !metadata_class || !platform::is_readable(root, k_instance_probe_size) || &root->get_descriptor() != metadata_class)
+			{
+				disable("Reflection::load was not called on the ReflectionMetadata singleton");
+				return;
+			}
+			if (!validate(root))
+			{
+				disable("the ReflectionMetadata tree does not have the expected shape");
+				return;
+			}
+			adopt_root(root);
+		}
+		flush(true);
 	}
 
 	void MetadataRegistry::request_flush()
@@ -250,7 +264,7 @@ namespace rml::reflection
 				return;
 		}
 		if (auto* qt = qt::QtIntegration::instance())
-			qt->run_on_gui_thread([this] { flush(); });
+			qt->run_on_gui_thread([this] { flush(true); });
 	}
 
 	void MetadataRegistry::disable(const std::string& reason)
@@ -266,7 +280,7 @@ namespace rml::reflection
 			const auto functions = memory::functions_referencing_string(k_metadata_file);
 			if (functions.size() != 1)
 			{
-				disable(std::format("{} function(s) reference \"{}\"; expected only the metadata singleton getter", functions.size(), k_metadata_file));
+				RML_DEBUG("{} function(s) reference \"{}\"; waiting for Reflection::load", functions.size(), k_metadata_file);
 				return nullptr;
 			}
 			m_getter = functions.front();
@@ -274,10 +288,7 @@ namespace rml::reflection
 
 		const auto* metadata_class = ClassRegistry::instance().find_engine_class("ReflectionMetadata");
 		if (!metadata_class)
-		{
-			disable("the ReflectionMetadata class is not registered");
 			return nullptr;
-		}
 
 		const memory::module image(platform::studio_image_name());
 		for (auto* reference : memory::data_references_from(*m_getter))
@@ -295,26 +306,27 @@ namespace rml::reflection
 
 	bool MetadataRegistry::adopt_root(RBX::Instance* root)
 	{
-		if (!validate(root))
-		{
-			disable("the ReflectionMetadata tree does not have the expected shape");
-			return false;
-		}
 		m_root = root;
 		RML_INFO("ReflectionMetadata singleton at 0x{:X}", reinterpret_cast<std::uintptr_t>(root));
 		return true;
 	}
 
-	void MetadataRegistry::flush()
+	void MetadataRegistry::flush(const bool last_chance)
 	{
+		std::lock_guard flush_lock(m_flush_mutex);
 		if (m_disabled.load(std::memory_order_acquire))
 			return;
 
 		if (!m_root)
 		{
 			auto* root = find_root();
-			if (!root || !adopt_root(root))
+			if (!root || !validate(root))
+			{
+				if (last_chance)
+					disable("the ReflectionMetadata singleton could not be found or validated");
 				return;
+			}
+			adopt_root(root);
 		}
 
 		std::vector<ClassMetadata> pending;

@@ -45,7 +45,7 @@ namespace rml::reflection
 		[[nodiscard]] std::optional<std::string> category_name(std::string_view translation_suffix) const;
 
 	private:
-		void flush();
+		void flush(bool last_chance);
 		bool adopt_root(RBX::Instance* root);
 		RBX::Instance* find_root();
 		void disable(const std::string& reason);
@@ -54,6 +54,7 @@ namespace rml::reflection
 		void apply_descriptions();
 
 		std::mutex m_mutex;
+		std::recursive_mutex m_flush_mutex;
 		std::vector<ClassMetadata> m_pending;
 		std::once_flag m_install_once;
 		std::atomic<bool> m_disabled{false};
