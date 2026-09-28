@@ -109,14 +109,20 @@ namespace rml::reflection
 
 	static void publish_metadata(const std::string& class_name, const bool owned_class, const ClassHints& hints, const std::vector<PropertySpec>& properties)
 	{
+		auto& registry = MetadataRegistry::instance();
+		if (hints.insert_category)
+			registry.register_category(*hints.insert_category);
+		for (const auto& property : properties)
+			registry.register_category(property.category);
+
 		ClassMetadata metadata{class_name, owned_class, hints, {}};
 		for (const auto& property : properties)
 		{
 			if (!property.hints.empty())
 				metadata.properties.push_back(PropertyMetadata{property.name, property.hints});
 		}
-		if (!metadata.hints.empty() || !metadata.properties.empty())
-			MetadataRegistry::instance().add(std::move(metadata));
+		if (owned_class || !metadata.properties.empty())
+			registry.add(std::move(metadata));
 	}
 
 	ClassRegistry& ClassRegistry::instance()
@@ -363,6 +369,12 @@ namespace rml::reflection
 			{
 				m_extensions.pop_back();
 				return std::unexpected(checked.error());
+			}
+
+			if (descriptor->find_property(property.name.c_str()))
+			{
+				m_extensions.pop_back();
+				return std::unexpected(std::format("class '{}' already has a property named '{}'", spec.name, property.name));
 			}
 
 			auto member = make_property(descriptor, property.name, property.category, property.type, property.accessor.get());

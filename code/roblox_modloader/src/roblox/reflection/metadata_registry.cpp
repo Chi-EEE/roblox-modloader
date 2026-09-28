@@ -1,6 +1,7 @@
 #include "metadata_registry.hpp"
 
 #include "class_registry.hpp"
+#include "app/init_gate.hpp"
 
 #include "RobloxModLoader/internal/common.hpp"
 #include "RobloxModLoader/memory/module.hpp"
@@ -12,7 +13,10 @@
 #include "RobloxModLoader/roblox/reflection/property_descriptor.hpp"
 #include "pointers.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <format>
+#include <set>
 
 RML_LOG_SCOPE("Metadata");
 
@@ -20,6 +24,30 @@ namespace rml::reflection
 {
 	static constexpr std::string_view k_metadata_file = "ReflectionMetadata.xml";
 	static constexpr std::size_t k_instance_probe_size = 0x20;
+	static constexpr std::string_view k_documentation_log = "[FLog::ReflectionMetadata] {} has no translated description!";
+	static constexpr std::string_view k_documentation_prefix = "@roblox/globaltype/";
+
+	struct DocumentationSource
+	{
+		std::string (*lookup)(void* context, const std::string& key);
+		void* context;
+	};
+
+	using fill_documentation = void (*)(RBX::Instance* classes, DocumentationSource source);
+
+	static std::string lookup_description(void* context, const std::string& key)
+	{
+		try
+		{
+			const auto& descriptions = *static_cast<const std::unordered_map<std::string, std::string>*>(context);
+			const auto it = descriptions.find(key);
+			return it == descriptions.end() ? std::string{} : it->second;
+		}
+		catch (...)
+		{
+			return {};
+		}
+	}
 
 	static std::string class_name_of(const RBX::Instance& instance)
 	{
@@ -61,7 +89,11 @@ namespace rml::reflection
 		const auto* descriptor = item->get_descriptor().find_property(field);
 		if (!descriptor)
 		{
-			RML_WARN("{} has no field {}; skipped", class_name_of(*item), field);
+			static std::mutex reported_mutex;
+			static std::set<std::string, std::less<>> reported;
+			std::lock_guard lock(reported_mutex);
+			if (reported.emplace(std::format("{}.{}", class_name_of(*item), field)).second)
+				RML_WARN("{} has no field {}; that hint is ignored on this build", class_name_of(*item), field);
 			return false;
 		}
 		if (!descriptor->set_string_value(item, text))
@@ -112,16 +144,13 @@ namespace rml::reflection
 
 	static void apply_class(RBX::Instance* item, const RBX::Instance* classes, const ClassHints& hints)
 	{
-		if (hints.description)
-			write(item, "Description", *hints.description);
 		if (hints.insert_category)
 			write(item, "ClassCategory", *hints.insert_category);
 		if (hints.explorer_order)
 			write(item, "ExplorerOrder", std::to_string(*hints.explorer_order));
 		if (hints.preferred_parent)
 			write(item, "PreferredParent", *hints.preferred_parent);
-		if (hints.insertable)
-			write(item, "Insertable", text_of(*hints.insertable));
+		write(item, "Insertable", text_of(hints.insertable.value_or(true)));
 		if (hints.browsable)
 			write(item, "Browsable", text_of(*hints.browsable));
 		if (hints.icon_of)
@@ -135,8 +164,6 @@ namespace rml::reflection
 
 	static void apply_property(RBX::Instance* member, const PropertyHints& hints)
 	{
-		if (hints.description)
-			write(member, "Description", *hints.description);
 		if (hints.order)
 			write(member, "PropertyOrder", std::to_string(*hints.order));
 		if (hints.read_only)
@@ -144,11 +171,7 @@ namespace rml::reflection
 		if (hints.hidden)
 			write(member, "Browsable", "false");
 		if (hints.deprecated)
-		{
 			write(member, "Deprecated", "true");
-			if (!hints.description && !hints.deprecated->empty())
-				write(member, "Description", *hints.deprecated);
-		}
 		if (const auto& slider = hints.slider)
 		{
 			write(member, "UIMinimum", std::format("{}", slider->min));
@@ -175,7 +198,46 @@ namespace rml::reflection
 			std::lock_guard lock(m_mutex);
 			m_pending.push_back(std::move(metadata));
 		}
-		request_flush();
+		if (g_init_gate && g_init_gate->is_open())
+			flush();
+		else
+			request_flush();
+	}
+
+	static std::string translation_suffix_of(const std::string_view name)
+	{
+		std::string suffix;
+		for (const auto c : name)
+		{
+			if (std::isalnum(static_cast<unsigned char>(c)))
+				suffix.push_back(c);
+		}
+		return suffix;
+	}
+
+	void MetadataRegistry::register_category(const std::string_view name)
+	{
+		auto suffix = translation_suffix_of(name);
+		if (suffix.empty())
+			return;
+		std::lock_guard lock(m_categories_mutex);
+		m_categories.try_emplace(std::move(suffix), name);
+	}
+
+	std::optional<std::string> MetadataRegistry::category_name(const std::string_view translation_suffix) const
+	{
+		std::lock_guard lock(m_categories_mutex);
+		const auto it = m_categories.find(std::string(translation_suffix));
+		return it == m_categories.end() ? std::nullopt : std::optional(it->second);
+	}
+
+	void MetadataRegistry::on_tree_loaded(RBX::Instance* root)
+	{
+		if (m_disabled.load(std::memory_order_acquire) || !root)
+			return;
+		if (!m_root && !adopt_root(root))
+			return;
+		flush();
 	}
 
 	void MetadataRegistry::request_flush()
@@ -231,6 +293,18 @@ namespace rml::reflection
 		return nullptr;
 	}
 
+	bool MetadataRegistry::adopt_root(RBX::Instance* root)
+	{
+		if (!validate(root))
+		{
+			disable("the ReflectionMetadata tree does not have the expected shape");
+			return false;
+		}
+		m_root = root;
+		RML_INFO("ReflectionMetadata singleton at 0x{:X}", reinterpret_cast<std::uintptr_t>(root));
+		return true;
+	}
+
 	void MetadataRegistry::flush()
 	{
 		if (m_disabled.load(std::memory_order_acquire))
@@ -239,15 +313,8 @@ namespace rml::reflection
 		if (!m_root)
 		{
 			auto* root = find_root();
-			if (!root)
+			if (!root || !adopt_root(root))
 				return;
-			if (!validate(root))
-			{
-				disable("the ReflectionMetadata tree does not have the expected shape");
-				return;
-			}
-			m_root = root;
-			RML_INFO("ReflectionMetadata singleton at 0x{:X}", reinterpret_cast<std::uintptr_t>(root));
 		}
 
 		std::vector<ClassMetadata> pending;
@@ -270,6 +337,41 @@ namespace rml::reflection
 				RML_ERROR("metadata for {} failed with an unknown exception", metadata.class_name);
 			}
 		}
+		apply_descriptions();
+	}
+
+	void MetadataRegistry::apply_descriptions()
+	{
+		if (!m_descriptions_pending || m_descriptions_unavailable)
+			return;
+		m_descriptions_pending = false;
+
+		if (!m_fill_documentation)
+		{
+			const auto all_classes = reinterpret_cast<void*>(g_pointers->m_roblox_pointers.class_descriptor_all_classes);
+			for (const auto& candidate : memory::functions_referencing_string(k_documentation_log))
+			{
+				const auto calls = memory::calls_from(candidate);
+				if (std::ranges::find(calls, all_classes) == calls.end())
+					continue;
+				if (m_fill_documentation)
+				{
+					m_fill_documentation.reset();
+					break;
+				}
+				m_fill_documentation = candidate;
+			}
+			if (!m_fill_documentation)
+			{
+				m_descriptions_unavailable = true;
+				RML_WARN("descriptions are unavailable on this build: the class documentation filler was not found");
+				return;
+			}
+		}
+
+		auto* classes = child_of_class(m_root, "ReflectionMetadataClasses");
+		reinterpret_cast<fill_documentation>(m_fill_documentation->start)(classes, DocumentationSource{&lookup_description, &m_descriptions});
+		RML_INFO("descriptions applied ({} entries)", m_descriptions.size());
 	}
 
 	RBX::Instance* MetadataRegistry::insert(RBX::Instance* parent, const char* class_name, const std::string& name)
@@ -293,6 +395,7 @@ namespace rml::reflection
 
 	void MetadataRegistry::apply(const ClassMetadata& metadata)
 	{
+		const auto created_before = m_owned.size();
 		auto* classes = child_of_class(m_root, "ReflectionMetadataClasses");
 		auto* item = child_named(classes, metadata.class_name);
 		if (!item)
@@ -301,7 +404,14 @@ namespace rml::reflection
 			return;
 
 		if (metadata.owned_class)
+		{
 			apply_class(item, classes, metadata.hints);
+			if (metadata.hints.description)
+			{
+				m_descriptions[std::format("{}{}", k_documentation_prefix, metadata.class_name)] = *metadata.hints.description;
+				m_descriptions_pending = true;
+			}
+		}
 
 		std::size_t applied = 0;
 		if (!metadata.properties.empty())
@@ -315,20 +425,21 @@ namespace rml::reflection
 			for (const auto& property : metadata.properties)
 			{
 				auto* member = child_named(properties, property.name);
-				if (member && !metadata.owned_class)
-				{
-					RML_WARN("{}.{} already has engine metadata; left unchanged", metadata.class_name, property.name);
-					continue;
-				}
 				if (!member)
 					member = insert(properties, "ReflectionMetadataMember", property.name);
 				if (!member)
 					continue;
 				apply_property(member, property.hints);
+				const auto& text = property.hints.description ? property.hints.description : property.hints.deprecated;
+				if (text && !text->empty())
+				{
+					m_descriptions[std::format("{}{}.{}", k_documentation_prefix, metadata.class_name, property.name)] = *text;
+					m_descriptions_pending = true;
+				}
 				++applied;
 			}
 		}
 
-		RML_INFO("metadata applied for {} ({} member(s))", metadata.class_name, applied);
+		RML_INFO("metadata applied for {} ({} member(s), {} new item(s))", metadata.class_name, applied, m_owned.size() - created_before);
 	}
 }

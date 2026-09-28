@@ -4,6 +4,7 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace rml::qt
 {
@@ -19,6 +20,10 @@ namespace rml::qt
 		~QString();
 
 		QString(const QString&) = delete;
+		QString(QString&& other) noexcept :
+		    m_storage(std::exchange(other.m_storage, nullptr))
+		{
+		}
 
 		QString& operator=(const QString&) = delete;
 
