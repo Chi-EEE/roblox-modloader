@@ -89,6 +89,8 @@ namespace functions
 	using clouds_update = void (*)(void* clouds, RBX::Graphics::DeviceContext* context, void* view_info, const RBX::Graphics::RenderCamera* camera, RBX::Graphics::Framebuffer* main_framebuffer, RBX::Graphics::GlobalShaderData* globals, const void* camera_change, void* stats);
 	using clouds_composite = void (*)(void* clouds, RBX::Graphics::DeviceContext* context, const void* camera, RBX::Graphics::GlobalShaderData* globals, void* stats);
 	using clouds_composite_clouds = void (*)(void* clouds, RBX::Graphics::DeviceContext* context, RBX::Graphics::GlobalShaderData* globals, void* stats);
+	using render_objects_clipped = void (*)(RBX::Graphics::DeviceContext* context, void* instance_glob, const void* view, void* group, void* stats, std::uint32_t tracker, const void* tokens, void* clip, bool first, bool second);
+	using dispatch_scene_dispatch = void (*)(void* self, const void* context, const void* view, std::uint32_t pass, std::uint32_t id, const void* query);
 
 	using lua_gettop = int(RML_ENGINE_CALL*)(lua_State* L);
 	using lua_settop = void(RML_ENGINE_CALL*)(lua_State* L, int idx);

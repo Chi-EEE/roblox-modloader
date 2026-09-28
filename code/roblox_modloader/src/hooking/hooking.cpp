@@ -89,6 +89,21 @@ namespace rml
 		if (const auto begin_pass = graphics::device_context_begin_pass_target())
 			DetourHookHelper::add<Hooks::device_context_begin_pass>("DEVICE_CONTEXT_BEGIN_PASS", begin_pass);
 
+		const bool classic_queues = g_pointers->m_roblox_pointers.render_objects_clipped != nullptr;
+		const bool main_view_queues = g_pointers->m_roblox_pointers.dispatch_scene_dispatch != nullptr;
+		if (classic_queues)
+			DetourHookHelper::add<Hooks::render_objects_clipped>("RENDER_OBJECTS_CLIPPED", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.render_objects_clipped));
+		if (main_view_queues)
+			DetourHookHelper::add<Hooks::dispatch_scene_dispatch>("DISPATCH_SCENE_DISPATCH", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.dispatch_scene_dispatch));
+		if (classic_queues || main_view_queues)
+		{
+			injection_table.load_queue_names();
+			injection_table.resolve_queues();
+			engine_stages.mark_queues_hooked();
+		}
+		if (classic_queues != main_view_queues)
+			RML_WARN("queue injection points cover only the {} pipeline", classic_queues ? "classic" : "MainView");
+
 		if (const auto device_destructor = graphics::device_destructor_target())
 		{
 			DetourHookHelper::add<Hooks::device_destroy>("DEVICE_DESTROY", device_destructor);

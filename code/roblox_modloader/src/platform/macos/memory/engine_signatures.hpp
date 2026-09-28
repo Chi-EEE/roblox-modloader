@@ -95,6 +95,20 @@ namespace rml
 				},
 			},
 			{
+				"RENDER_OBJECTS_CLIPPED",
+				"FC 6F BA A9 FA 67 01 A9 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 7B 05 A9 FD 43 01 91 FF 03 22 D1 E2 27 00 F9 E1 1F 00 F9",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.render_objects_clipped = ptr.as<functions::render_objects_clipped>();
+				},
+			},
+			{
+				"DISPATCH_SCENE_DISPATCH",
+				"48 24 42 A9 29 01 08 CB 29 FD 43 D3 EA B0 96 52 EA 0D AB 72 29 7D 0A 1B",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.dispatch_scene_dispatch = ptr.as<functions::dispatch_scene_dispatch>();
+				},
+			},
+			{
 				"PROPERTY_DESCRIPTOR_CTOR",
 				"F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F4 03 07 AA F3 03 05 AA",
 				[](const memory::handle ptr) {

@@ -52,5 +52,7 @@ namespace rml
 		static void clouds_composite_clouds(void* clouds, RBX::Graphics::DeviceContext* context, RBX::Graphics::GlobalShaderData* globals, void* stats);
 		static void* device_destroy(RBX::Graphics::Device* self, unsigned int flags);
 		static void device_context_begin_pass(RBX::Graphics::DeviceContext* self, RBX::Graphics::Framebuffer* framebuffer, unsigned load_mask, unsigned store_mask, const RBX::Graphics::PassClear* clear, const RBX::Graphics::PassResolve* resolve, unsigned flags);
+		static void render_objects_clipped(RBX::Graphics::DeviceContext* context, void* instance_glob, const void* view, void* group, void* stats, std::uint32_t tracker, const void* tokens, void* clip, bool first, bool second);
+		static void dispatch_scene_dispatch(void* self, const void* context, const void* view, std::uint32_t pass, std::uint32_t id, const void* query);
 	};
 }
