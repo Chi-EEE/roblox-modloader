@@ -1,7 +1,7 @@
 #pragma once
 
 #include "RobloxModLoader/memory/string_anchor.hpp"
-#include "RobloxModLoader/roblox/reflection/metadata.hpp"
+#include "RobloxModLoader/roblox/reflection/hints.hpp"
 
 #include <atomic>
 #include <memory>

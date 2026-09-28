@@ -2,7 +2,7 @@
 
 #include "RobloxModLoader/internal/common.hpp"
 #include "RobloxModLoader/roblox/reflection/class_builder.hpp"
-#include "RobloxModLoader/roblox/reflection/metadata.hpp"
+#include "RobloxModLoader/roblox/reflection/hints.hpp"
 #include "RobloxModLoader/roblox/reflection/creatable.hpp"
 #include "RobloxModLoader/roblox/reflection/object.hpp"
 

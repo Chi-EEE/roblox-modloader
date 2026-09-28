@@ -2,7 +2,7 @@
 
 #include "RobloxModLoader/rml_export.hpp"
 #include "RobloxModLoader/roblox/reflection/described_creatable.hpp"
-#include "RobloxModLoader/roblox/reflection/metadata.hpp"
+#include "RobloxModLoader/roblox/reflection/hints.hpp"
 #include "RobloxModLoader/roblox/reflection/property_accessor.hpp"
 
 #include <cstddef>
