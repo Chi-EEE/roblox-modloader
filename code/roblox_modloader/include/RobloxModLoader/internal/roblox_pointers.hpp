@@ -168,6 +168,9 @@ struct RobloxPointers
 	functions::scene_manager_render_ui scene_manager_render_ui;
 	functions::reflection_metadata_get_singleton reflection_metadata_get_singleton;
 	functions::reflection_metadata_load reflection_metadata_load;
+	functions::enum_descriptor_ctor enum_descriptor_ctor;
+	functions::enum_item_ctor enum_item_ctor;
+	functions::enum_descriptor_lookup enum_descriptor_lookup;
 
 	const std::vector<const RBX::Reflection::Type*>* type_registry;
 };

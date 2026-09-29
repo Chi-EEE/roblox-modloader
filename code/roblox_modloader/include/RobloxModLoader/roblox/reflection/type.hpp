@@ -34,6 +34,8 @@ namespace RBX::Reflection
 		const bool is_float;
 		const bool is_number;
 		const bool is_enum;
+		const bool reserved_37;
+		const bool reserved_38;
 
 		Type() = delete;
 

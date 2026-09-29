@@ -95,6 +95,9 @@ namespace functions
 	using scene_manager_render_ui = void (*)(void* self, RBX::Graphics::DeviceContext* context, const RBX::Graphics::RenderCamera* camera, void* stats, bool rotate, int debug_mode, bool capture);
 	using reflection_metadata_get_singleton = void (*)();
 	using reflection_metadata_load = void* (*)(void* self, const void* path);
+	using enum_descriptor_ctor = void (*)(void* self, const char* name);
+	using enum_item_ctor = void (*)(void* self, const char* name, RBX::Reflection::Descriptor::Attributes attributes, int value, const void* owner);
+	using enum_descriptor_lookup = const void* (*)(const char* name);
 
 	using lua_gettop = int(RML_ENGINE_CALL*)(lua_State* L);
 	using lua_settop = void(RML_ENGINE_CALL*)(lua_State* L, int idx);
