@@ -120,6 +120,8 @@ namespace clouds
 	{
 		const auto mips = static_cast<unsigned>(noise.mips.size());
 		auto texture = device.create_texture_impl(type, format, noise.size, noise.size, noise.depth, mips, 1, 1, Texture::Usage::ShaderRead, name);
+		if (!texture)
+			return nullptr;
 		for (unsigned mip = 0; mip < mips; ++mip)
 		{
 			const auto size = std::max(noise.size >> mip, 1u);
@@ -142,7 +144,7 @@ namespace clouds
 
 	bool CloudState::ensure_noise(Device& device)
 	{
-		if (m_shape)
+		if (m_shape && m_detail && m_weather)
 			return true;
 		if (!m_noise)
 		{
@@ -150,9 +152,12 @@ namespace clouds
 				return false;
 			m_noise = m_noise_future.get();
 		}
-		m_shape = upload(device, m_noise->shape, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_shape");
-		m_detail = upload(device, m_noise->detail, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_detail");
-		m_weather = upload(device, m_noise->weather, Texture::Type::Type_2D, Texture::Format::RG8, "rml_clouds_weather");
+		if (!m_shape)
+			m_shape = upload(device, m_noise->shape, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_shape");
+		if (!m_detail)
+			m_detail = upload(device, m_noise->detail, Texture::Type::Type_3D, Texture::Format::R8, "rml_clouds_detail");
+		if (!m_weather)
+			m_weather = upload(device, m_noise->weather, Texture::Type::Type_2D, Texture::Format::RG8, "rml_clouds_weather");
 		return m_shape && m_detail && m_weather;
 	}
 
