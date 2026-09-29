@@ -10,8 +10,17 @@ namespace Roblox;
 /// </remarks>
 public partial class Object : IDisposable
 {
-    internal readonly nuint Handle;
+    private readonly nuint _handle;
     private readonly InstanceReference _reference;
+
+    internal nuint Handle
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_reference.IsClosed, this);
+            return _handle;
+        }
+    }
 
     internal Object(nuint handle)
     {
@@ -20,22 +29,22 @@ public partial class Object : IDisposable
             throw new ArgumentException("Cannot wrap a null native handle", nameof(handle));
         }
 
-        Handle = handle;
+        _handle = handle;
         _reference = InstanceReference.Retain(handle);
     }
 
     protected Object(string className)
     {
-        Handle = Reflection.CreateOwnedHandle(className, CreatorRole.Engine);
-        _reference = InstanceReference.Adopt(Handle);
+        _handle = Reflection.CreateOwnedHandle(className, CreatorRole.Engine);
+        _reference = InstanceReference.Adopt(_handle);
     }
 
     public void Dispose() => _reference.Dispose();
 
     public override bool Equals(object? obj)
-        => obj is Object other && other.Handle == Handle;
+        => obj is Object other && other._handle == _handle;
 
-    public override int GetHashCode() => Handle.GetHashCode();
+    public override int GetHashCode() => _handle.GetHashCode();
 
     protected internal void AddEventHandler(string eventName, Delegate handler)
         => EventManager.Add(Handle, eventName, handler);
