@@ -93,6 +93,8 @@ namespace functions
 	using dispatch_scene_dispatch = void (*)(void* self, const void* context, const void* view, std::uint32_t pass, std::uint32_t id, const void* query);
 	using scene_manager_render_sky = void (*)(void* self, RBX::Graphics::DeviceContext* context, const RBX::Graphics::RenderCamera* camera, bool first, bool second, int face);
 	using scene_manager_render_ui = void (*)(void* self, RBX::Graphics::DeviceContext* context, const RBX::Graphics::RenderCamera* camera, void* stats, bool rotate, int debug_mode, bool capture);
+	using reflection_metadata_get_singleton = void (*)();
+	using reflection_metadata_load = void* (*)(void* self, const void* path);
 
 	using lua_gettop = int(RML_ENGINE_CALL*)(lua_State* L);
 	using lua_settop = void(RML_ENGINE_CALL*)(lua_State* L, int idx);

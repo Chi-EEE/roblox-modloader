@@ -166,6 +166,8 @@ struct RobloxPointers
 	functions::dispatch_scene_dispatch dispatch_scene_dispatch;
 	functions::scene_manager_render_sky scene_manager_render_sky;
 	functions::scene_manager_render_ui scene_manager_render_ui;
+	functions::reflection_metadata_get_singleton reflection_metadata_get_singleton;
+	functions::reflection_metadata_load reflection_metadata_load;
 
 	const std::vector<const RBX::Reflection::Type*>* type_registry;
 };

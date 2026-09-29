@@ -42,6 +42,7 @@ namespace rml::reflection
 	RML_EXPORT void destroy_variant(RBX::Reflection::Variant& variant);
 	RML_EXPORT void fire_event(RBX::Instance* instance, std::ptrdiff_t member_offset, const RBX::Reflection::EventArguments& arguments);
 	RML_EXPORT void* engine_virtual(const RBX::Instance* instance, std::size_t slot);
+	RML_EXPORT bool engine_base_overrides(const RBX::Instance* instance, std::size_t slot);
 
 	template<typename Class, typename Member>
 	std::ptrdiff_t member_offset(Member Class::* member)
@@ -63,6 +64,15 @@ namespace rml::reflection
 		const RBX::Name& get_class_name() const override
 		{
 			return this->get_descriptor().name;
+		}
+
+		bool ask_set_parent(const RBX::Instance* parent) const override
+		{
+			const auto slot = rml::vtable_index_of(&RBX::Instance::ask_set_parent, parent);
+			if (!engine_base_overrides(this, slot))
+				return true;
+			const auto function = reinterpret_cast<bool (*)(const Derived*, const RBX::Instance*)>(engine_virtual(this, slot));
+			return function(static_cast<const Derived*>(this), parent);
 		}
 
 		static ClassLayout layout()

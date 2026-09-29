@@ -2,6 +2,7 @@
 
 #include "RobloxModLoader/internal/common.hpp"
 #include "RobloxModLoader/roblox/reflection/class_builder.hpp"
+#include "RobloxModLoader/roblox/reflection/hints.hpp"
 #include "RobloxModLoader/roblox/reflection/creatable.hpp"
 #include "RobloxModLoader/roblox/reflection/object.hpp"
 
@@ -23,6 +24,7 @@ namespace rml::reflection
 		std::string category;
 		PropertyType type;
 		std::shared_ptr<void> accessor;
+		PropertyHints hints;
 	};
 
 	struct FunctionSpec
@@ -46,6 +48,7 @@ namespace rml::reflection
 		std::vector<PropertySpec> properties;
 		std::vector<FunctionSpec> functions;
 		std::vector<EventSpec> events;
+		ClassHints hints;
 	};
 
 	struct ExtensionSpec
@@ -119,6 +122,7 @@ namespace rml::reflection
 		[[nodiscard]] const RBX::ICreator* creator_for(const RBX::Name* name) const;
 		[[nodiscard]] RBX::Reflection::ClassDescriptor* find_engine_class(std::string_view name) const;
 		[[nodiscard]] RegisteredClass* class_of(const void* instance);
+		void report_engine_collisions() const;
 		[[nodiscard]] void** vtable_for(RegisteredClass& entry, void** derived_vtable);
 
 	private:

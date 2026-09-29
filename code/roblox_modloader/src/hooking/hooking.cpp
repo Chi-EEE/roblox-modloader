@@ -5,6 +5,7 @@
 #include "RobloxModLoader/roblox/job_vtable.hpp"
 #include "RobloxModLoader/roblox/task_scheduler.hpp"
 #include "pointers.hpp"
+#include "RobloxModLoader/qt/qt_module.hpp"
 #include "render/engine_stages.hpp"
 #include "render/injection_table.hpp"
 #include "roblox/graphics/graphics_registry.hpp"
@@ -121,6 +122,12 @@ namespace rml
 
 		if (const auto device_destructor = graphics::device_destructor_target())
 			DetourHookHelper::add<Hooks::device_destroy>("DEVICE_DESTROY", device_destructor);
+
+		if (g_pointers->m_roblox_pointers.reflection_metadata_load)
+			DetourHookHelper::add<Hooks::reflection_metadata_load>("REFLECTION_METADATA_LOAD", reinterpret_cast<void*>(g_pointers->m_roblox_pointers.reflection_metadata_load));
+
+		if (const auto translate = qt::detail::core_export_optional("QCoreApplication::translate(char const*, char const*, char const*, int)"))
+			DetourHookHelper::add<Hooks::qt_translate>("QT_TRANSLATE", translate);
 
 		if (const auto pre_submit_pass = graphics::adorn_render_pre_submit_pass_target())
 			DetourHookHelper::add<Hooks::adorn_render_pre_submit_pass>("ADORN_RENDER_PRE_SUBMIT_PASS", pre_submit_pass);

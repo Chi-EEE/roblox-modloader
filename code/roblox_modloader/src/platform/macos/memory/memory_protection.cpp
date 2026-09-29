@@ -80,4 +80,18 @@ namespace rml::platform
 			return false;
 		return region_address <= reinterpret_cast<mach_vm_address_t>(address) && (info.protection & VM_PROT_EXECUTE) != 0;
 	}
+
+	bool is_readable(const void* address, const std::size_t size) noexcept
+	{
+		auto region_address = reinterpret_cast<mach_vm_address_t>(address);
+		mach_vm_size_t region_size = 0;
+		vm_region_basic_info_data_64_t info{};
+		mach_msg_type_number_t info_count = VM_REGION_BASIC_INFO_COUNT_64;
+		mach_port_t object_name = MACH_PORT_NULL;
+
+		if (!address || mach_vm_region(mach_task_self(), &region_address, &region_size, VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info), &info_count, &object_name) != KERN_SUCCESS)
+			return false;
+		const auto start = reinterpret_cast<mach_vm_address_t>(address);
+		return region_address <= start && start + size <= region_address + region_size && (info.protection & VM_PROT_READ) != 0;
+	}
 }

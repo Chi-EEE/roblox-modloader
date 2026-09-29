@@ -123,6 +123,20 @@ namespace rml
 				},
 			},
 			{
+				"REFLECTION_METADATA_GET_SINGLETON",
+				memory::referencing("ReflectionMetadata.xml"),
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.reflection_metadata_get_singleton = ptr.as<functions::reflection_metadata_get_singleton>();
+				},
+			},
+			{
+				"REFLECTION_METADATA_LOAD",
+				memory::referencing("[FLog::Output] Reflection::load %s"),
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.reflection_metadata_load = ptr.as<functions::reflection_metadata_load>();
+				},
+			},
+			{
 				"PROPERTY_DESCRIPTOR_CTOR",
 				"F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F4 03 07 AA F3 03 05 AA",
 				[](const memory::handle ptr) {
