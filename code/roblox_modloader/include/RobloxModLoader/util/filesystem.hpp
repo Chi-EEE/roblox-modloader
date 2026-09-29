@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cerrno>
 #include <cstddef>
 #include <expected>
 #include <filesystem>
@@ -40,9 +41,10 @@ namespace rml::utils
 
 	[[nodiscard]] inline std::expected<std::string, std::error_code> read_file(const std::filesystem::path& path)
 	{
+		errno = 0;
 		std::ifstream stream(path, std::ios::binary);
 		if (!stream)
-			return std::unexpected(std::make_error_code(std::errc::no_such_file_or_directory));
+			return std::unexpected(errno ? std::error_code(errno, std::generic_category()) : std::make_error_code(std::errc::io_error));
 
 		std::string contents{std::istreambuf_iterator<char>(stream), {}};
 		if (stream.bad())
