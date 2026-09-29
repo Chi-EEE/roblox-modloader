@@ -91,6 +91,33 @@ namespace rml::reflection
 		return 0;
 	}
 
+	static const RBX::Reflection::PropertyDescriptor* shadowed_property(const RBX::Reflection::ClassDescriptor& owner, const std::string_view name, const RBX::Reflection::PropertyDescriptor* self)
+	{
+		const auto& container = static_cast<const RBX::Reflection::MemberDescriptorContainer<RBX::Reflection::PropertyDescriptor>&>(owner);
+		const auto other = [&](const RBX::Reflection::PropertyDescriptor* descriptor) { return descriptor && descriptor != self && descriptor->name.to_string() == name; };
+		if (container.finalized)
+		{
+			for (const auto* descriptor : container.get_descriptor_view())
+			{
+				if (other(descriptor))
+					return descriptor;
+			}
+			return nullptr;
+		}
+		for (const auto* current = &container; current; current = current->base_container)
+		{
+			for (const auto& view : current->views)
+			{
+				for (const auto* descriptor : view)
+				{
+					if (other(descriptor))
+						return descriptor;
+				}
+			}
+		}
+		return nullptr;
+	}
+
 	static std::expected<void, std::string> check_properties(const std::string& owner, const std::vector<PropertySpec>& properties, const RBX::Reflection::ClassDescriptor* existing)
 	{
 		std::set<std::string_view> names;
@@ -98,7 +125,7 @@ namespace rml::reflection
 		{
 			if (!names.insert(property.name).second)
 				return std::unexpected(std::format("{}: property '{}' is declared twice", owner, property.name));
-			if (existing && existing->find_property(property.name.c_str()))
+			if (existing && shadowed_property(*existing, property.name, nullptr))
 				return std::unexpected(std::format("class '{}' already has a property named '{}'", owner, property.name));
 			if (const auto& slider = property.hints.slider)
 			{
@@ -276,7 +303,7 @@ namespace rml::reflection
 		if (!base)
 			return std::unexpected(std::format("base class '{}' not found", spec.base));
 
-		if (auto checked = check_properties(spec.name, spec.properties, nullptr); !checked)
+		if (auto checked = check_properties(spec.name, spec.properties, base); !checked)
 			return std::unexpected(checked.error());
 
 		auto* const index = memory::rtti();
@@ -391,6 +418,24 @@ namespace rml::reflection
 		publish_metadata(descriptor, false, {}, spec.properties, entry.property_table);
 		RML_INFO("Extended class {} with {} properties and {} functions", spec.name, entry.property_table.size(), entry.function_table.size());
 		return descriptor;
+	}
+
+	void ClassRegistry::report_engine_collisions() const
+	{
+		const auto report = [](const RBX::Reflection::ClassDescriptor& scope, const std::string_view mod_class, const RBX::Reflection::PropertyDescriptor* property) {
+			if (shadowed_property(scope, property->name.to_string(), property))
+				RML_ERROR("{}.{} has the same name as an engine property of {}; scripts and Studio may resolve either one, rename it", mod_class, property->name.to_string(), scope.name.to_string());
+		};
+		for (const auto& entry : m_classes)
+		{
+			for (const auto* property : entry.property_table)
+				report(*entry.base, entry.name, property);
+		}
+		for (const auto& extension : m_extensions)
+		{
+			for (const auto* property : extension.property_table)
+				report(*extension.descriptor, extension.descriptor->name.to_string(), property);
+		}
 	}
 
 	RegisteredClass* ClassRegistry::class_of(const void* instance)

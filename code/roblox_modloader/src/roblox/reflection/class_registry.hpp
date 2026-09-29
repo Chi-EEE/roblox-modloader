@@ -122,6 +122,7 @@ namespace rml::reflection
 		[[nodiscard]] const RBX::ICreator* creator_for(const RBX::Name* name) const;
 		[[nodiscard]] RBX::Reflection::ClassDescriptor* find_engine_class(std::string_view name) const;
 		[[nodiscard]] RegisteredClass* class_of(const void* instance);
+		void report_engine_collisions() const;
 		[[nodiscard]] void** vtable_for(RegisteredClass& entry, void** derived_vtable);
 
 	private:
