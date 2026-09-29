@@ -1,5 +1,6 @@
 #include "mod_marker.hpp"
 #include "mod_thing.hpp"
+#include "thing_enums.hpp"
 #include "workspace_extension.hpp"
 
 #include <RobloxModLoader/logger/logger.hpp>
@@ -28,6 +29,7 @@ public:
 
 	void on_init(rml::InitContext& context) override
 	{
+		define_thing_enums(context);
 		ModThing::define(context);
 		ModMarker::define(context);
 		extend_workspace(context);
