@@ -41,11 +41,12 @@ namespace rml::platform
 
 	bool is_readable(const void* address, const std::size_t size) noexcept
 	{
+		static constexpr DWORD k_readable = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
 		MEMORY_BASIC_INFORMATION info{};
-		if (!address || !VirtualQuery(address, &info, sizeof(info)) || info.State != MEM_COMMIT || (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0)
+		if (!address || !VirtualQuery(address, &info, sizeof(info)) || info.State != MEM_COMMIT || (info.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0 || (info.Protect & k_readable) == 0)
 			return false;
 		const auto start = reinterpret_cast<std::uintptr_t>(address);
 		const auto end = reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
-		return start + size <= end;
+		return size <= end - start;
 	}
 }

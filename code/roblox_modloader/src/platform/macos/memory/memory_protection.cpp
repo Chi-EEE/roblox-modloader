@@ -92,6 +92,7 @@ namespace rml::platform
 		if (!address || mach_vm_region(mach_task_self(), &region_address, &region_size, VM_REGION_BASIC_INFO_64, reinterpret_cast<vm_region_info_t>(&info), &info_count, &object_name) != KERN_SUCCESS)
 			return false;
 		const auto start = reinterpret_cast<mach_vm_address_t>(address);
-		return region_address <= start && start + size <= region_address + region_size && (info.protection & VM_PROT_READ) != 0;
+		const auto end = region_address + region_size;
+		return region_address <= start && start < end && size <= end - start && (info.protection & VM_PROT_READ) != 0;
 	}
 }
