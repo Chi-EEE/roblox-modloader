@@ -4,6 +4,7 @@
 #include "RobloxModLoader/roblox/reflection/yield_function_descriptor.hpp"
 #include "RobloxModLoader/util/layout_assert.hpp"
 #include "dotnet_variant.hpp"
+#include "instance_handles.hpp"
 #include "interop_registry.hpp"
 #include "type_marshaler.hpp"
 
@@ -82,7 +83,7 @@ namespace rml::dotnet
 	public:
 		static void dispatch(const RBX::Reflection::YieldFunctionDescriptor& descriptor, RBX::Reflection::DescribedBase& instance, RBX::Reflection::FunctionDescriptor::Arguments& arguments, const ManagedYieldCallback on_complete, void* state)
 		{
-			std::unique_ptr<YieldInvocation> invocation(new YieldInvocation(on_complete, state));
+			std::unique_ptr<YieldInvocation> invocation(new YieldInvocation(instance_handles().retain(&instance), on_complete, state));
 
 			const RBX::Reflection::YieldFunctionDescriptor::Context context{&invocation->m_engine_context, nullptr};
 			descriptor.execute(&instance, arguments, context, &on_resume, &on_error);
@@ -107,15 +108,26 @@ namespace rml::dotnet
 
 		EngineContext m_engine_context{};
 		YieldResult m_result;
+		std::uintptr_t m_receiver;
 		ManagedYieldCallback m_on_complete;
 		void* m_state;
 
-		YieldInvocation(ManagedYieldCallback on_complete, void* state) noexcept :
+		YieldInvocation(const std::uintptr_t receiver, ManagedYieldCallback on_complete, void* state) noexcept :
+		    m_receiver(receiver),
 		    m_on_complete(on_complete),
 		    m_state(state)
 		{
 			m_engine_context.owner = this;
 		}
+
+	public:
+		~YieldInvocation()
+		{
+			if (m_receiver)
+				instance_handles().release(m_receiver);
+		}
+
+	private:
 
 		[[nodiscard]] static YieldInvocation* recover_from_engine_context(void* engine_context) noexcept
 		{
