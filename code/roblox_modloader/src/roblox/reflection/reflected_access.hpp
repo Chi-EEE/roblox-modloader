@@ -52,4 +52,22 @@ namespace rml::reflection
 			return std::unexpected(std::format("field {} rejected the value", Name.view()));
 		}
 	}
+
+	template<typename Object, typename Declaring, typename T, utils::fixed_string Name>
+	    requires std::derived_from<Object, Declaring> && std::derived_from<Object, RBX::Instance>
+	bool mirrors(const Object& object, RBX::Reflection::Reflected<T, Name> Declaring::* field)
+	{
+		static_assert(engine_type_name_v<T> != nullptr, "this field type has no engine reflection type");
+		const auto* descriptor = object.get_descriptor().find_property(Name.c_str());
+		if (!descriptor || &descriptor->type != TypeIndex::find(engine_type_name_v<T>))
+			return false;
+		try
+		{
+			return RBX::ConstProperty(*descriptor, &object).template get<T>() == (object.*field).get();
+		}
+		catch (...)
+		{
+			return false;
+		}
+	}
 }

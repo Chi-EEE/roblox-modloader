@@ -4,6 +4,7 @@
 
 #include "RobloxModLoader/internal/common.hpp"
 #include "RobloxModLoader/mod/events.hpp"
+#include "RobloxModLoader/platform/memory/memory_protection.hpp"
 #include "RobloxModLoader/qt/qt_integration.hpp"
 #include "RobloxModLoader/roblox/instance.hpp"
 #include "RobloxModLoader/roblox/reflection/metadata/reflection_metadata.hpp"
@@ -64,12 +65,26 @@ namespace rml::reflection
 		return created.get();
 	}
 
+	static bool is_instance_of(const void* candidate, const std::string_view class_name)
+	{
+		if (!candidate || reinterpret_cast<std::uintptr_t>(candidate) % alignof(void*) != 0 || !platform::is_readable(candidate, sizeof(RBX::Instance)))
+			return false;
+		return static_cast<const RBX::Instance*>(candidate)->get_descriptor().is_a(class_name.data());
+	}
+
 	static bool validate(const Reflection& root)
 	{
-		const auto* sound = root.classes ? static_cast<const Class*>(std::as_const(*root.classes).find_first_child_by_name("Sound")) : nullptr;
-		const auto* properties = sound ? sound->find_first_child_of_type<Properties>() : nullptr;
+		if (!is_instance_of(root.classes, RBX::Reflection::Metadata::Classes::class_name))
+			return false;
+		const auto* sound = static_cast<const Class*>(std::as_const(*root.classes).find_first_child_by_name("Sound"));
+		const auto* properties = is_instance_of(sound, Class::class_name) ? sound->find_first_child_of_type<Properties>() : nullptr;
 		const auto* volume = properties ? static_cast<const Member*>(properties->find_first_child_by_name("Volume")) : nullptr;
-		if (!volume || !(volume->ui_minimum.get() < volume->ui_maximum.get()))
+		if (!is_instance_of(volume, Member::class_name) || !(volume->ui_minimum.get() < volume->ui_maximum.get()))
+			return false;
+		const bool numbers = mirrors(*volume, &Item::ui_minimum) && mirrors(*volume, &Item::ui_maximum) && mirrors(*volume, &Item::ui_num_ticks) &&
+		                     mirrors(*volume, &Item::property_order) && mirrors(*sound, &Class::explorer_image_index) && mirrors(*sound, &Class::explorer_order) &&
+		                     mirrors(*sound, &Class::insertable);
+		if (!numbers || !mirrors(*sound, &Class::preferred_parent) || !mirrors(*sound, &Item::class_category) || volume->description.size() > 0x10000)
 			return false;
 		RML_INFO("metadata tree validated (Sound.Volume slider {}..{})", volume->ui_minimum.get(), volume->ui_maximum.get());
 		return true;
