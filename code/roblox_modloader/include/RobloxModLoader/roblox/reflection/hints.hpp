@@ -50,4 +50,21 @@ namespace rml::reflection
 			return !description && !insert_category && !preferred_parent && !icon_of && !explorer_order && !insertable && !browsable;
 		}
 	};
+
+	struct EnumHints
+	{
+		std::optional<std::string> description;
+	};
+
+	struct EnumItemHints
+	{
+		std::optional<std::string> description;
+		bool hidden{};
+		std::optional<std::string> deprecated;
+
+		[[nodiscard]] bool empty() const
+		{
+			return !description && !hidden && !deprecated;
+		}
+	};
 }
