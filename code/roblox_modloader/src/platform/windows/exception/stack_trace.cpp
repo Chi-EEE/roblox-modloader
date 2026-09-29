@@ -82,8 +82,14 @@ namespace rml::exception_filter
 			for (WORD i = 0; i < frame_count; ++i)
 			{
 				const auto address = reinterpret_cast<DWORD64>(stack[i]);
-				log_frame(process, labels, i, address);
-				chain.push_back(std::format("{:#x}", address));
+				try
+				{
+					log_frame(process, labels, i, address);
+					chain.push_back(std::format("{:#x}", address));
+				}
+				catch (...)
+				{
+				}
 			}
 
 			RML_ERROR("{}: {}", labels.chain, chain.empty() ? std::string{"No stack trace available"} : utils::join(chain, " -> "));
