@@ -1,5 +1,6 @@
 #pragma once
 
+#include "enum_descriptor.hpp"
 #include "member.hpp"
 #include "type.hpp"
 
@@ -182,6 +183,36 @@ namespace RBX::Reflection
 	RML_LAYOUT_DIAGNOSTIC_PUSH()
 	RML_ASSERT_SIZE(TypedPropertyDescriptor<float>, 0xA8);
 	RML_ASSERT_OFFSET(TypedPropertyDescriptor<float>, get_set, 0x90);
+	RML_LAYOUT_DIAGNOSTIC_POP()
+
+	class EnumPropertyDescriptor : public PropertyDescriptor
+	{
+	public:
+		const EnumDescriptor* enum_descriptor;
+
+		virtual int get_int_value(const DescribedBase* instance) const = 0;
+		virtual bool set_int_value(DescribedBase* instance, int value) const = 0;
+		virtual const EnumDescriptor::Item* get_enum_item(const DescribedBase* instance) const = 0;
+		virtual bool set_enum_item(DescribedBase* instance, const EnumDescriptor::Item& item) const = 0;
+	};
+
+	template<typename E>
+	class EnumPropDescriptor : public EnumPropertyDescriptor
+	{
+	public:
+		std::unique_ptr<typename TypedPropertyDescriptor<E>::GetSet> get_set;
+		std::unique_ptr<typename TypedPropertyDescriptor<E>::StyleGetSet> style_get_set;
+		const EnumDescriptor* value_enum_descriptor;
+	};
+
+	RML_LAYOUT_DIAGNOSTIC_PUSH()
+#if !defined(RML_WINDOWS)
+	RML_ASSERT_OFFSET(EnumPropertyDescriptor, enum_descriptor, 0x90);
+	RML_ASSERT_SIZE(EnumPropDescriptor<int>, 0xB0);
+	RML_ASSERT_OFFSET(EnumPropDescriptor<int>, get_set, 0x98);
+	RML_ASSERT_OFFSET(EnumPropDescriptor<int>, style_get_set, 0xA0);
+	RML_ASSERT_OFFSET(EnumPropDescriptor<int>, value_enum_descriptor, 0xA8);
+#endif
 	RML_LAYOUT_DIAGNOSTIC_POP()
 
 	class ConstProperty

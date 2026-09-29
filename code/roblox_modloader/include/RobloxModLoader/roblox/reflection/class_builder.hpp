@@ -97,6 +97,7 @@ namespace rml::reflection
 		void hidden() const;
 		void deprecated(std::string_view message) const;
 		void slider(double min, double max, int ticks, SliderScaling scaling) const;
+		void enum_type(const void* key) const;
 
 	private:
 		PropertySpec& spec() const;
@@ -245,6 +246,8 @@ namespace rml::reflection
 		PropertyBuilder<TypedExtensionBuilder, T> property(std::string_view name, T (*getter)(Base*), void (*setter)(Base*, const T&))
 		{
 			m_builder.property(name, property_type_of<T>::value, std::make_shared<FunctionGetSet<Base, T>>(getter, setter));
+			if constexpr (ModEnum<T>)
+				m_builder.last_property().enum_type(enum_key<T>());
 			return PropertyBuilder<TypedExtensionBuilder, T>(*this, m_builder.last_property());
 		}
 
@@ -318,6 +321,8 @@ namespace rml::reflection
 		PropertyBuilder<TypedClassBuilder, T> property(std::string_view name, T Derived::* member)
 		{
 			m_builder.property(name, property_type_of<T>::value, std::make_shared<MemberGetSet<Derived, T>>(member));
+			if constexpr (ModEnum<T>)
+				m_builder.last_property().enum_type(enum_key<T>());
 			return PropertyBuilder<TypedClassBuilder, T>(*this, m_builder.last_property());
 		}
 
@@ -326,6 +331,8 @@ namespace rml::reflection
 		{
 			using T = std::remove_cvref_t<std::invoke_result_t<Getter, const Derived&>>;
 			m_builder.property(name, property_type_of<T>::value, std::make_shared<MethodGetSet<Derived, T, Getter, Setter>>(getter, setter));
+			if constexpr (ModEnum<T>)
+				m_builder.last_property().enum_type(enum_key<T>());
 			return PropertyBuilder<TypedClassBuilder, T>(*this, m_builder.last_property());
 		}
 

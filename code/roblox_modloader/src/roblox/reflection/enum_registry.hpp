@@ -1,5 +1,6 @@
 #pragma once
 
+#include "RobloxModLoader/memory/vtable.hpp"
 #include "RobloxModLoader/roblox/reflection/enum_descriptor.hpp"
 #include "RobloxModLoader/roblox/reflection/hints.hpp"
 
@@ -42,15 +43,13 @@ namespace rml::reflection
 		[[nodiscard]] const RBX::Reflection::EnumDescriptor* find(const void* key) const;
 
 	private:
-		static constexpr std::size_t k_vtable_slots = 8;
-
 		struct ModEnum
 		{
-			alignas(16) std::array<std::byte, sizeof(RBX::Reflection::EnumDescriptor)> descriptor{};
+			alignas(RBX::Reflection::EnumDescriptor) std::array<std::byte, sizeof(RBX::Reflection::EnumDescriptor)> descriptor{};
 			std::unique_ptr<std::byte[]> items;
 			std::vector<RBX::Reflection::EnumDescriptor::NameEntry> by_name;
 			std::vector<RBX::Reflection::EnumDescriptor::ValueEntry> by_value;
-			std::array<void*, 2 + k_vtable_slots> vtable{};
+			memory::VtableCopy vtable;
 		};
 
 		[[nodiscard]] std::expected<const RBX::Reflection::EnumDescriptor*, std::string> define(const EnumSpec& spec);

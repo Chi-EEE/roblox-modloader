@@ -51,6 +51,12 @@ namespace RBX::Reflection
 
 		EnumDescriptor() = delete;
 
+		virtual const Item* lookup(const char* name) const = 0;
+		virtual const Item* lookup_by_enum_value(int value) const = 0;
+		virtual const Item* lookup_by_enum_value_in_variant(const Variant& value) const = 0;
+		virtual void convert_typed_variant_to_int_value(const Variant& value, int& out) const = 0;
+		virtual void convert_int_value_to_typed_variant_if_valid_value(int value, Variant& out) const = 0;
+
 		[[nodiscard]] static constexpr std::uint32_t name_hash(const std::string_view name)
 		{
 			std::uint32_t hash = 0x811C9DC5u;

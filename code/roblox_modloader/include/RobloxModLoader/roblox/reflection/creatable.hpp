@@ -20,8 +20,10 @@ namespace RBX
 	class ForceConstructionInCreatable
 	{
 	public:
+		static constexpr std::int32_t construction_tag = 6138;
+
 		EngineContext* context;
-		std::int32_t tag;
+		std::int32_t tag{construction_tag};
 	};
 
 	RML_LAYOUT_DIAGNOSTIC_PUSH()

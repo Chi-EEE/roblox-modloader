@@ -26,6 +26,8 @@ namespace RBX::Reflection
 		constexpr int ColorSequence = 42, NumberRange = 44, NumberSequence = 45, Integer = 87;
 	}
 
+	class VariantData;
+
 	class Type : public Descriptor
 	{
 	public:
@@ -38,6 +40,8 @@ namespace RBX::Reflection
 		const bool reserved_38;
 
 		Type() = delete;
+
+		virtual std::string to_string(const VariantData* data) const = 0;
 
 		RML_EXPORT static std::span<const Type* const> get_all_types();
 

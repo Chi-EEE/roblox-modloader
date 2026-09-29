@@ -1,9 +1,11 @@
 #pragma once
 
 #include "RobloxModLoader/internal/platform.hpp"
+#include "RobloxModLoader/platform/abi.hpp"
 
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 namespace rml::memory
 {
@@ -17,6 +19,11 @@ namespace rml::memory
 	[[nodiscard]] inline T* vtable_of(const void* object) noexcept
 	{
 		return *static_cast<T* const*>(object);
+	}
+
+	inline void set_vtable(void* object, void* const* vtable) noexcept
+	{
+		*static_cast<void* const**>(object) = vtable;
 	}
 
 	template<typename Pmf>
@@ -52,4 +59,46 @@ namespace rml::memory
 		return member.function / sizeof(void*);
 #endif
 	}
+
+	class VtableCopy
+	{
+	public:
+		VtableCopy() = default;
+
+		VtableCopy(void* const* source, const std::size_t slots) :
+		    m_entries(source - platform::abi::vtable_prefix_slots, source + slots)
+		{
+		}
+
+		void set(const std::size_t slot, void* function)
+		{
+			m_entries.at(platform::abi::vtable_prefix_slots + slot) = function;
+		}
+
+		template<typename Pmf, typename Function>
+		void replace(const Pmf method, Function* function)
+		{
+			set(virtual_index(method), reinterpret_cast<void*>(function));
+		}
+
+		template<typename Pmf>
+		void inherit(const Pmf method, void* const* source)
+		{
+			const auto slot = virtual_index(method);
+			set(slot, source[slot]);
+		}
+
+		[[nodiscard]] std::size_t size() const noexcept
+		{
+			return m_entries.size() - platform::abi::vtable_prefix_slots;
+		}
+
+		[[nodiscard]] void* const* address_point() const noexcept
+		{
+			return m_entries.data() + platform::abi::vtable_prefix_slots;
+		}
+
+	private:
+		std::vector<void*> m_entries;
+	};
 }

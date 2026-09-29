@@ -325,7 +325,7 @@ namespace RBX::Reflection
 
 	class DescribedBase : public EventSource
 	{
-	protected:
+	public:
 		union
 		{
 			std::weak_ptr<DescribedBase> weak_this;
@@ -336,6 +336,7 @@ namespace RBX::Reflection
 			std::unique_ptr<std::string> xml_id;
 		};
 
+	protected:
 		DescribedBase()
 		{
 		}
@@ -470,4 +471,8 @@ namespace RBX::Reflection
 			rml::engine_virtual_unreachable();
 		}
 	};
+
+	RML_LAYOUT_DIAGNOSTIC_PUSH()
+	RML_ASSERT_OFFSET(DescribedBase, descriptor, 0x18);
+	RML_LAYOUT_DIAGNOSTIC_POP()
 }

@@ -2,13 +2,13 @@
 
 #include "RobloxModLoader/internal/common.hpp"
 #include "RobloxModLoader/memory/rtti_index.hpp"
+#include "RobloxModLoader/roblox/reflection/described_creatable.hpp"
 #include "RobloxModLoader/roblox/reflection/property_accessor.hpp"
 #include "app/init_gate.hpp"
 #include "pointers.hpp"
 
 #include <algorithm>
 #include <cctype>
-#include <cstring>
 #include <format>
 #include <limits>
 #include <set>
@@ -25,7 +25,7 @@ namespace rml::reflection
 		return !value.is_void() && (&value.type() == self || &value.type() == RBX::Reflection::Type::try_singleton<int>());
 	}
 
-	static void destroy_enum(void*)
+	static void destroy_enum(EnumDescriptor*)
 	{
 	}
 
@@ -44,8 +44,8 @@ namespace rml::reflection
 	{
 		if (!self->find_item_by_value(value))
 			return;
-		if (const auto* ops = static_cast<const void* const*>(out.value_ops()); ops && ops != VariantOps<int>::table)
-			reinterpret_cast<void (*)(char*)>(const_cast<void*>(ops[2]))(static_cast<char*>(out.storage()));
+		if (out.value_ops() != VariantOps<int>::table)
+			destroy_variant(out);
 		out.set_type_and_ops(self, VariantOps<int>::table);
 		*out.try_cast<int>() = value;
 	}
@@ -108,7 +108,7 @@ namespace rml::reflection
 		if (!available())
 			return nullptr;
 		const std::string text(name);
-		return static_cast<const EnumDescriptor*>(g_pointers->m_roblox_pointers.enum_descriptor_lookup(text.c_str()));
+		return g_pointers->m_roblox_pointers.enum_descriptor_lookup(text.c_str());
 	}
 
 	const EnumDescriptor* EnumRegistry::find(const void* key) const
@@ -168,14 +168,14 @@ namespace rml::reflection
 
 		const auto& p = g_pointers->m_roblox_pointers;
 		auto& storage = *m_enums.emplace_back(std::make_unique<ModEnum>());
-		auto* bytes = storage.descriptor.data();
-		p.enum_descriptor_ctor(bytes, spec.name.c_str());
-		auto* const* engine_vtable = *reinterpret_cast<void* const* const*>(bytes);
+		p.enum_descriptor_ctor(storage.descriptor.data(), spec.name.c_str());
+		auto& descriptor = *reinterpret_cast<EnumDescriptor*>(storage.descriptor.data());
 
 		const auto count = spec.items.size();
 		storage.items = std::make_unique<std::byte[]>(count * sizeof(EnumDescriptor::Item));
+		auto* items = reinterpret_cast<EnumDescriptor::Item*>(storage.items.get());
 		for (std::size_t i = 0; i < count; ++i)
-			p.enum_item_ctor(storage.items.get() + i * sizeof(EnumDescriptor::Item), spec.items[i].name.c_str(), RBX::Reflection::Descriptor::Attributes{}, spec.items[i].value, bytes);
+			p.enum_item_ctor(&items[i], spec.items[i].name.c_str(), RBX::Reflection::Descriptor::Attributes{}, spec.items[i].value, &descriptor);
 
 		for (std::size_t i = 0; i < count; ++i)
 			storage.by_name.push_back({EnumDescriptor::name_hash(spec.items[i].name), static_cast<std::uint16_t>(i), EnumDescriptor::no_alias});
@@ -191,27 +191,25 @@ namespace rml::reflection
 			std::ranges::sort(storage.by_value, {}, &EnumDescriptor::ValueEntry::value);
 		}
 
-		auto& descriptor = *reinterpret_cast<EnumDescriptor*>(bytes);
-		descriptor.items = reinterpret_cast<const EnumDescriptor::Item*>(storage.items.get());
+		descriptor.items = items;
 		descriptor.item_count = count;
 		descriptor.by_name = storage.by_name.data();
 		descriptor.by_name_count = storage.by_name.size();
 		descriptor.by_value = dense ? nullptr : storage.by_value.data();
 		descriptor.by_value_count = dense ? 0 : storage.by_value.size();
 
-		storage.vtable[0] = engine_vtable[-2];
-		storage.vtable[1] = engine_vtable[-1];
-		storage.vtable[2] = reinterpret_cast<void*>(&destroy_enum);
-		storage.vtable[3] = reinterpret_cast<void*>(&destroy_enum);
-		storage.vtable[4] = donor[2];
-		storage.vtable[5] = donor[3];
-		storage.vtable[6] = donor[4];
-		storage.vtable[7] = reinterpret_cast<void*>(&lookup_in_variant);
-		storage.vtable[8] = reinterpret_cast<void*>(&variant_to_int);
-		storage.vtable[9] = reinterpret_cast<void*>(&int_to_variant);
-		*reinterpret_cast<void**>(bytes) = &storage.vtable[2];
+		auto& vtable = storage.vtable = memory::VtableCopy(memory::vtable_of(&descriptor), memory::virtual_index(&EnumDescriptor::convert_int_value_to_typed_variant_if_valid_value) + 1);
+		for (std::size_t slot = 0; slot < platform::abi::destructor_slots; ++slot)
+			vtable.set(slot, reinterpret_cast<void*>(&destroy_enum));
+		vtable.inherit(&RBX::Reflection::Type::to_string, donor);
+		vtable.inherit(&EnumDescriptor::lookup, donor);
+		vtable.inherit(&EnumDescriptor::lookup_by_enum_value, donor);
+		vtable.replace(&EnumDescriptor::lookup_by_enum_value_in_variant, &lookup_in_variant);
+		vtable.replace(&EnumDescriptor::convert_typed_variant_to_int_value, &variant_to_int);
+		vtable.replace(&EnumDescriptor::convert_int_value_to_typed_variant_if_valid_value, &int_to_variant);
+		memory::set_vtable(&descriptor, vtable.address_point());
 
-		RML_INFO("Registered enum {} ({} item(s), {} lookup, descriptor 0x{:X})", spec.name, count, dense ? "dense" : "sorted", reinterpret_cast<std::uintptr_t>(bytes));
+		RML_INFO("Registered enum {} ({} item(s), {} lookup, descriptor 0x{:X})", spec.name, count, dense ? "dense" : "sorted", reinterpret_cast<std::uintptr_t>(&descriptor));
 		return &descriptor;
 	}
 }

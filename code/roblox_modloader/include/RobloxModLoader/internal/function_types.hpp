@@ -4,6 +4,8 @@
 #include "RobloxModLoader/roblox/reflection/array_view.hpp"
 #include "RobloxModLoader/roblox/reflection/creatable.hpp"
 #include "RobloxModLoader/roblox/reflection/descriptor.hpp"
+#include "RobloxModLoader/roblox/reflection/property_descriptor.hpp"
+#include "RobloxModLoader/roblox/security/script_permissions.hpp"
 #include "RobloxModLoader/roblox/util/standard_out.hpp"
 #include "lua.h"
 #include "lualib.h"
@@ -76,14 +78,14 @@ namespace functions
 	using signal_slot_free = void(RML_ENGINE_CALL*)(void* slot);
 	using signal_mutex_get = void*(RML_ENGINE_CALL*)();
 	using global_init = void (*)();
-	using class_descriptor_ctor = void (*)(void* self, void* base, const char* name, std::uint32_t instance_id, std::uint64_t stable_id, bool a6, bool a7, const void* attributes, std::uint32_t protection, const std::uint32_t* memory_category, RBX::ArrayView<const RBX::Reflection::PropertyDescriptor*> properties, RBX::ArrayView<const RBX::Reflection::EventDescriptor*> events, RBX::ArrayView<const RBX::Reflection::FunctionDescriptor*> functions, RBX::ArrayView<const RBX::Reflection::YieldFunctionDescriptor*> yield_functions, RBX::ArrayView<const RBX::Reflection::CallbackDescriptor*> callbacks);
+	using class_descriptor_ctor = void (*)(void* self, void* base, const char* name, std::uint32_t instance_id, std::uint64_t stable_id, bool a6, bool a7, const void* attributes, RBX::Security::Permissions protection, const std::uint32_t* memory_category, RBX::ArrayView<const RBX::Reflection::PropertyDescriptor*> properties, RBX::ArrayView<const RBX::Reflection::EventDescriptor*> events, RBX::ArrayView<const RBX::Reflection::FunctionDescriptor*> functions, RBX::ArrayView<const RBX::Reflection::YieldFunctionDescriptor*> yield_functions, RBX::ArrayView<const RBX::Reflection::CallbackDescriptor*> callbacks);
 	using class_descriptor_all_classes = std::vector<RBX::Reflection::ClassDescriptor*>* (*)();
 	using creatable_get_creator = const RBX::ICreator* (*)(const RBX::Name* name);
 	using instance_ctor = void (*)(void* self, const RBX::ForceConstructionInCreatable* force, const char* name);
 	using create_instance_impl = std::shared_ptr<RBX::Instance> (*)(std::uint32_t stable_id, std::size_t size, std::size_t align, std::uint32_t memory_category, void* (*construct)(void* memory, const void* args), const void* args);
-	using property_descriptor_ctor = void (*)(void* self, void* class_descriptor, const void* type, const char* name, const char* category, const void* attributes, std::uint32_t protection_get, std::uint32_t protection_set, bool a9);
-	using function_descriptor_ctor = void (*)(void* self, void* class_descriptor, const char* name, std::uint32_t protection, RBX::Reflection::Descriptor::Attributes attributes);
-	using event_descriptor_ctor = void (*)(void* self, void* class_descriptor, const char* name, std::uint32_t protection, const void* attributes);
+	using property_descriptor_ctor = void (*)(void* self, void* class_descriptor, const RBX::Reflection::Type* type, const char* name, const char* category, const RBX::Reflection::PropertyDescriptor::Attributes* attributes, RBX::Security::Permissions protection_get, RBX::Security::Permissions protection_set, bool is_enum);
+	using function_descriptor_ctor = void (*)(void* self, void* class_descriptor, const char* name, RBX::Security::Permissions protection, RBX::Reflection::Descriptor::Attributes attributes);
+	using event_descriptor_ctor = void (*)(void* self, void* class_descriptor, const char* name, RBX::Security::Permissions protection, const RBX::Reflection::Descriptor::Attributes* attributes);
 	using visual_engine_begin_render = RBX::Graphics::DeviceContext* (*)(RBX::Graphics::VisualEngine* self);
 	using scene_manager_render_scene = void (*)(void* self, RBX::Graphics::DeviceContext* context, RBX::Graphics::Framebuffer* target, const void* camera, RBX::ArrayView<RBX::Graphics::Framebuffer*> extra, std::uint32_t capture_mode);
 	using clouds_update = void (*)(void* clouds, RBX::Graphics::DeviceContext* context, void* view_info, const RBX::Graphics::RenderCamera* camera, RBX::Graphics::Framebuffer* main_framebuffer, RBX::Graphics::GlobalShaderData* globals, const void* camera_change, void* stats);
@@ -96,8 +98,8 @@ namespace functions
 	using reflection_metadata_get_singleton = void (*)();
 	using reflection_metadata_load = void* (*)(void* self, const void* path);
 	using enum_descriptor_ctor = void (*)(void* self, const char* name);
-	using enum_item_ctor = void (*)(void* self, const char* name, RBX::Reflection::Descriptor::Attributes attributes, int value, const void* owner);
-	using enum_descriptor_lookup = const void* (*)(const char* name);
+	using enum_item_ctor = void (*)(void* self, const char* name, RBX::Reflection::Descriptor::Attributes attributes, int value, const RBX::Reflection::EnumDescriptor* owner);
+	using enum_descriptor_lookup = const RBX::Reflection::EnumDescriptor* (*)(const char* name);
 
 	using lua_gettop = int(RML_ENGINE_CALL*)(lua_State* L);
 	using lua_settop = void(RML_ENGINE_CALL*)(lua_State* L, int idx);
