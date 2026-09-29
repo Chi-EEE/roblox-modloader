@@ -1,5 +1,7 @@
 #pragma once
 
+#include "thing_enums.hpp"
+
 #include <RobloxModLoader/roblox/reflection/described_creatable.hpp>
 #include <RobloxModLoader/roblox/util/G3DCore.h>
 
@@ -25,6 +27,8 @@ public:
 	std::string notes;
 	int legacy{};
 	bool debug{};
+	ThingMode mode{};
+	Face face{Face::Front};
 	rbx::signal<void(float)> speed_reset;
 
 	int reset(lua_State* L);

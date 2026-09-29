@@ -1,11 +1,13 @@
 #include "class_registry.hpp"
 
 #include "category_labels.hpp"
+#include "enum_registry.hpp"
 #include "metadata_registry.hpp"
 #include "mod_descriptors.hpp"
 
 #include "RobloxModLoader/memory/foreign_call.hpp"
 #include "RobloxModLoader/memory/rtti_index.hpp"
+#include "RobloxModLoader/memory/vtable.hpp"
 #include "RobloxModLoader/memory/module.hpp"
 #include "RobloxModLoader/platform/memory/host_image.hpp"
 #include "RobloxModLoader/roblox/reflection/described_creatable.hpp"
@@ -23,18 +25,6 @@ RML_LOG_SCOPE("ClassRegistry");
 
 namespace rml::reflection
 {
-	static constexpr std::size_t k_class_descriptor_storage = 1024;
-	static constexpr std::uint16_t k_functionality_persistent_local = 0x1 | 0x8 | 0x10;
-	static constexpr std::size_t k_descriptor_field_offset = 0x18;
-	static constexpr std::int32_t k_force_construction_tag = 6138;
-
-	struct ClassAttributes
-	{
-		std::uint64_t descriptor_attributes[2]{};
-		std::uint16_t functionality{k_functionality_persistent_local};
-		std::uint8_t padding[6]{};
-	};
-
 	struct ConstructArgs
 	{
 		RegisteredClass* entry;
@@ -43,19 +33,27 @@ namespace rml::reflection
 
 	static const RBX::Reflection::ClassDescriptor* descriptor_of(const void* instance)
 	{
-		return *reinterpret_cast<const RBX::Reflection::ClassDescriptor* const*>(static_cast<const std::byte*>(instance) + k_descriptor_field_offset);
+		return static_cast<const RBX::Reflection::DescribedBase*>(instance)->descriptor;
 	}
 
-	static void* construct_mod_instance(void* memory, const void* args)
+	static void* construct_mod_instance(void* object, const void* args)
 	{
 		const auto& [entry, force] = *static_cast<const ConstructArgs*>(args);
-		g_pointers->m_roblox_pointers.instance_ctor(memory, &force, entry->name.c_str());
-		entry->layout.construct(memory);
+		g_pointers->m_roblox_pointers.instance_ctor(object, &force, entry->name.c_str());
+		entry->layout.construct(object);
 
-		auto& vptr = *static_cast<void***>(memory);
-		vptr = ClassRegistry::instance().vtable_for(*entry, vptr);
-		*reinterpret_cast<const RBX::Reflection::ClassDescriptor**>(static_cast<std::byte*>(memory) + k_descriptor_field_offset) = entry->descriptor;
-		return memory;
+		memory::set_vtable(object, ClassRegistry::instance().vtable_for(*entry, memory::vtable_of(object)));
+		static_cast<RBX::Reflection::DescribedBase*>(object)->descriptor = entry->descriptor;
+		return object;
+	}
+
+	static std::size_t engine_vtable_slots(void* const* vtable)
+	{
+		const memory::module image(platform::studio_image_name());
+		std::size_t slots = 0;
+		while (image.contains(memory::handle(vtable[slots])))
+			++slots;
+		return slots;
 	}
 
 #if defined(RML_WINDOWS)
@@ -125,6 +123,8 @@ namespace rml::reflection
 		{
 			if (!names.insert(property.name).second)
 				return std::unexpected(std::format("{}: property '{}' is declared twice", owner, property.name));
+			if (property.type == PropertyType::Enum && !EnumRegistry::instance().find(property.enum_key))
+				return std::unexpected(std::format("{}.{}: its enum type is not registered; call define_enum or bind_enum for it earlier in on_init", owner, property.name));
 			if (existing && shadowed_property(*existing, property.name, nullptr))
 				return std::unexpected(std::format("class '{}' already has a property named '{}'", owner, property.name));
 			if (const auto& slider = property.hints.slider)
@@ -143,7 +143,9 @@ namespace rml::reflection
 	{
 		for (const auto& property : properties)
 		{
-			auto member = make_property(owner, property.name, property.category, property.type, property.accessor.get());
+			auto member = property.type == PropertyType::Enum
+			                  ? make_enum_property(owner, property.name, property.category, *EnumRegistry::instance().find(property.enum_key), property.accessor.get())
+			                  : make_property(owner, property.name, property.category, property.type, property.accessor.get());
 			if (!member)
 				return std::unexpected(member.error());
 			if (property.hints.deprecated)
@@ -247,15 +249,11 @@ namespace rml::reflection
 			if (!vtable)
 				return std::unexpected("RBX::Instance vtable not found");
 
-			const memory::module image(platform::studio_image_name());
-			const auto inside = [&](void* p) { return image.contains(memory::handle(p)); };
 			const auto slots = engine_virtual_slots<RBX::Instance>::value();
-			for (std::size_t slot = 0; slot < slots; ++slot)
-			{
-				if (!inside((*vtable)[slot]))
-					return std::unexpected(std::format("RBX::Instance vtable slot {} is not code; the Instance mirror has more virtuals than the engine", slot));
-			}
-			if (inside((*vtable)[slots]))
+			const auto engine_slots = engine_vtable_slots(*vtable);
+			if (engine_slots < slots)
+				return std::unexpected(std::format("RBX::Instance vtable slot {} is not code; the Instance mirror has more virtuals than the engine", engine_slots));
+			if (engine_slots > slots)
 				return std::unexpected(std::format("RBX::Instance vtable has more than {} slots; the Instance mirror is missing virtuals", slots));
 
 			return {};
@@ -303,6 +301,12 @@ namespace rml::reflection
 		if (!base)
 			return std::unexpected(std::format("base class '{}' not found", spec.base));
 
+		for (const auto& event : spec.events)
+		{
+			if (std::ranges::any_of(event.arguments, [](const EventArgument& argument) { return argument.type == PropertyType::Enum; }))
+				return std::unexpected(std::format("{}.{}: enum event arguments are not supported yet", spec.name, event.name));
+		}
+
 		if (auto checked = check_properties(spec.name, spec.properties, base); !checked)
 			return std::unexpected(checked.error());
 
@@ -319,8 +323,7 @@ namespace rml::reflection
 		entry.layout = spec.layout;
 		entry.base = base;
 		entry.engine_vtable = *engine_vtable;
-		entry.storage = std::make_unique<std::byte[]>(k_class_descriptor_storage);
-		std::memset(entry.storage.get(), 0, k_class_descriptor_storage);
+		entry.storage = std::make_unique<std::byte[]>(sizeof(RBX::Reflection::ClassDescriptor));
 
 		if (auto built = build_members(entry, entry.storage.get(), spec.properties, spec.functions); !built)
 		{
@@ -343,9 +346,9 @@ namespace rml::reflection
 			entry.member_storage.push_back(std::move(member->storage));
 		}
 
-		static ClassAttributes attributes;
+		static const RBX::Reflection::ClassDescriptor::Attributes attributes(RBX::Reflection::ClassDescriptor::PERSISTENT_LOCAL);
 		const auto& p = g_pointers->m_roblox_pointers;
-		p.class_descriptor_ctor(entry.storage.get(), base, entry.name.c_str(), 0, 0, false, false, &attributes, k_protection_none, nullptr,
+		p.class_descriptor_ctor(entry.storage.get(), base, entry.name.c_str(), 0, 0, false, false, &attributes, RBX::Security::Permissions::None, nullptr,
 		    RBX::ArrayView<const RBX::Reflection::PropertyDescriptor*>{entry.property_table},
 		    RBX::ArrayView<const RBX::Reflection::EventDescriptor*>{entry.event_table},
 		    RBX::ArrayView<const RBX::Reflection::FunctionDescriptor*>{entry.function_table},
@@ -465,26 +468,24 @@ namespace rml::reflection
 		return entry->engine_vtable[slot] != instance_vtable[slot];
 	}
 
-	void** ClassRegistry::vtable_for(RegisteredClass& entry, void** derived_vtable)
+	void* const* ClassRegistry::vtable_for(RegisteredClass& entry, void* const* derived_vtable)
 	{
 		std::call_once(entry.vtable_once, [&] {
-			entry.vtable = std::make_unique<ClonedVtable>();
-			std::memcpy(entry.vtable->data(), entry.engine_vtable - k_vtable_prefix_slots, sizeof(ClonedVtable));
-			auto* slots = entry.vtable->data() + k_vtable_prefix_slots;
+			auto& vtable = entry.vtable = memory::VtableCopy(entry.engine_vtable, engine_vtable_slots(entry.engine_vtable));
 
 #if defined(RML_WINDOWS)
-			slots[0] = reinterpret_cast<void*>(&mod_scalar_deleting_dtor);
+			vtable.set(0, reinterpret_cast<void*>(&mod_scalar_deleting_dtor));
 #else
-			slots[0] = reinterpret_cast<void*>(&mod_complete_dtor);
-			slots[1] = reinterpret_cast<void*>(&mod_deleting_dtor);
+			vtable.set(0, reinterpret_cast<void*>(&mod_complete_dtor));
+			vtable.set(1, reinterpret_cast<void*>(&mod_deleting_dtor));
 #endif
 
 			std::size_t merged = 0;
-			for (std::size_t slot = platform::abi::destructor_slots; slot < entry.layout.virtual_slots && slot < k_cloned_vtable_slots; ++slot)
+			for (std::size_t slot = platform::abi::destructor_slots; slot < entry.layout.virtual_slots && slot < vtable.size(); ++slot)
 			{
 				if (derived_vtable[slot] == entry.layout.base_vtable[slot])
 					continue;
-				slots[slot] = derived_vtable[slot];
+				vtable.set(slot, derived_vtable[slot]);
 				++merged;
 			}
 
@@ -492,7 +493,7 @@ namespace rml::reflection
 			    reinterpret_cast<std::uintptr_t>(entry.engine_vtable), merged, entry.layout.virtual_slots);
 		});
 
-		return entry.vtable->data() + k_vtable_prefix_slots;
+		return entry.vtable.address_point();
 	}
 
 	const RBX::ICreator* ClassRegistry::creator_for(const RBX::Name* name) const
@@ -504,7 +505,7 @@ namespace rml::reflection
 	std::shared_ptr<void> ModInstanceCreator::create(RBX::EngineContext* context, RBX::CreatorRole) const
 	{
 		const auto& p = g_pointers->m_roblox_pointers;
-		ConstructArgs args{&m_entry, {context, k_force_construction_tag}};
+		ConstructArgs args{&m_entry, {context}};
 
 		return p.create_instance_impl(m_entry.descriptor->stable_id, m_entry.layout.size, m_entry.layout.align, memory_category_of(m_entry.descriptor),
 		    &construct_mod_instance, &args);
@@ -709,5 +710,55 @@ namespace rml::reflection
 	void PropertyOptions::slider(const double min, const double max, const int ticks, const SliderScaling scaling) const
 	{
 		spec().hints.slider = Slider{min, max, ticks, scaling};
+	}
+
+	void PropertyOptions::enum_type(const void* key) const
+	{
+		spec().enum_key = key;
+	}
+
+	EnumBuilder::EnumBuilder(const std::string_view name, const void* key, const bool bind) :
+	    m_spec(std::make_unique<EnumSpec>(EnumSpec{std::string(name), key, bind, {}, {}}))
+	{
+	}
+
+	EnumBuilder::~EnumBuilder() = default;
+	EnumBuilder::EnumBuilder(EnumBuilder&&) noexcept = default;
+	EnumBuilder& EnumBuilder::operator=(EnumBuilder&&) noexcept = default;
+
+	void EnumBuilder::description(const std::string_view text)
+	{
+		m_spec->hints.description = std::string(text);
+	}
+
+	void EnumBuilder::item(const std::string_view name, const int value)
+	{
+		m_spec->items.push_back(EnumItemSpec{std::string(name), value, {}});
+	}
+
+	void EnumBuilder::item_description(const std::string_view text)
+	{
+		if (!m_spec->items.empty())
+			m_spec->items.back().hints.description = std::string(text);
+	}
+
+	void EnumBuilder::item_hidden()
+	{
+		if (!m_spec->items.empty())
+			m_spec->items.back().hints.hidden = true;
+	}
+
+	void EnumBuilder::item_deprecated(const std::string_view message)
+	{
+		if (!m_spec->items.empty())
+			m_spec->items.back().hints.deprecated = std::string(message);
+	}
+
+	const RBX::Reflection::EnumDescriptor* EnumBuilder::commit()
+	{
+		auto result = EnumRegistry::instance().commit(*m_spec);
+		if (!result)
+			throw std::logic_error(result.error());
+		return *result;
 	}
 }

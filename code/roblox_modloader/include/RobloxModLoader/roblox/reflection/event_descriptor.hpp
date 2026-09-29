@@ -88,8 +88,11 @@ namespace RBX::Reflection
 	class EventDesc : public EventDescriptor
 	{
 	public:
+#if defined(RML_WINDOWS)
 		std::int32_t signal;
-
+#else
+		std::ptrdiff_t signal;
+#endif
 	};
 
 	RML_LAYOUT_DIAGNOSTIC_PUSH()

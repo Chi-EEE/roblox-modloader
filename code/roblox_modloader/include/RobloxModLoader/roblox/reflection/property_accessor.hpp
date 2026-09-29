@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <new>
+#include <type_traits>
 #include <string>
 #include <utility>
 
@@ -18,7 +19,8 @@ namespace rml::reflection
 		Double,
 		String,
 		Color3,
-		Vector3
+		Vector3,
+		Enum
 	};
 
 	template<typename T>
@@ -65,6 +67,24 @@ namespace rml::reflection
 	{
 		static constexpr PropertyType value = PropertyType::Vector3;
 	};
+
+	template<typename T>
+	concept ModEnum = std::is_enum_v<T> && !std::is_convertible_v<T, int> && std::is_same_v<std::underlying_type_t<T>, int>;
+
+	template<ModEnum T>
+	struct property_type_of<T>
+	{
+		static constexpr PropertyType value = PropertyType::Enum;
+	};
+
+	template<ModEnum E>
+	inline constexpr char enum_key_tag{};
+
+	template<ModEnum E>
+	[[nodiscard]] constexpr const void* enum_key()
+	{
+		return &enum_key_tag<E>;
+	}
 
 	template<typename T>
 	struct abi_value

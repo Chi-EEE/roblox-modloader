@@ -137,6 +137,27 @@ namespace rml
 				},
 			},
 			{
+				"ENUM_DESCRIPTOR_CTOR",
+				"FF 83 01 D1 F8 5F 02 A9 F6 57 03 A9 F4 4F 04 A9 FD 7B 05 A9 FD 43 01 91 F3 03 00 AA ? ? ? ? ? ? ? ? 23 04 80 52",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.enum_descriptor_ctor = ptr.as<functions::enum_descriptor_ctor>();
+				},
+			},
+			{
+				"ENUM_ITEM_CTOR",
+				"FF C3 00 D1 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F3 03 05 AA F4 03 04 AA",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.enum_item_ctor = ptr.as<functions::enum_item_ctor>();
+				},
+			},
+			{
+				"ENUM_DESCRIPTOR_LOOKUP",
+				"FF 83 00 D1 FD 7B 01 A9 FD 43 00 91 E0 07 00 F9 ? ? ? ? ? ? ? ? 00 20 1B 91",
+				[](const memory::handle ptr) {
+					g_pointers->m_roblox_pointers.enum_descriptor_lookup = ptr.as<functions::enum_descriptor_lookup>();
+				},
+			},
+			{
 				"PROPERTY_DESCRIPTOR_CTOR",
 				"F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F4 03 07 AA F3 03 05 AA",
 				[](const memory::handle ptr) {
