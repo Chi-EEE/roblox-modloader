@@ -280,14 +280,23 @@ namespace rml::render::detail
 
 		if (in_frame())
 		{
-			std::lock_guard state(m_state_mutex);
-			for (auto& entry : m_entries)
+			std::vector<std::unique_ptr<IRenderPass>> pending;
 			{
-				if (entry.pass && inside(entry.pass.get()))
+				std::lock_guard state(m_state_mutex);
+				for (auto& op : m_pending)
 				{
-					RML_ERROR("pass '{}' belongs to a module unloading mid-frame; it is leaked", entry.name);
-					entry.faulted = true;
-					m_leaked.push_back(entry.pass.release());
+					if (op.pass && inside(op.pass.get()))
+						pending.push_back(std::move(op.pass));
+				}
+				std::erase_if(m_pending, [](const Pending& op) { return !op.remove && !op.pass; });
+				for (auto& entry : m_entries)
+				{
+					if (entry.pass && inside(entry.pass.get()))
+					{
+						RML_ERROR("pass '{}' belongs to a module unloading mid-frame; it is leaked", entry.name);
+						entry.faulted = true;
+						m_leaked.push_back(entry.pass.release());
+					}
 				}
 			}
 			return;
