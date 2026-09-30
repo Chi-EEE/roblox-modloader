@@ -2,7 +2,10 @@
 // This mod affects only the process with RML_BACKGROUND_TESTS=1.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shlobj.h>
 #include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
 #include "MinHook.h"
 
 static HWND (WINAPI *original_create_a)(DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
@@ -10,6 +13,51 @@ static BOOL (WINAPI *original_show)(HWND, int);
 static BOOL (WINAPI *original_show_async)(HWND, int);
 static BOOL (WINAPI *original_position)(HWND, HWND, int, int, int, int, UINT);
 static HWND (WINAPI *original_create)(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID);
+static HRESULT (WINAPI *original_folder)(HWND, int, HANDLE, DWORD, LPWSTR);
+static HRESULT (WINAPI *original_subfolder)(HWND, int, HANDLE, DWORD, LPCWSTR, LPWSTR);
+static HRESULT (WINAPI *original_known_folder)(const GUID *, DWORD, HANDLE, PWSTR *);
+static wchar_t test_local_appdata[MAX_PATH];
+static wchar_t test_documents[MAX_PATH];
+
+// Qt and Studio use shell APIs rather than the LOCALAPPDATA environment variable.
+static const wchar_t *folder_redirect(int folder) {
+    return (folder & 0xff) == CSIDL_LOCAL_APPDATA ? test_local_appdata :
+        (folder & 0xff) == CSIDL_PERSONAL ? test_documents : NULL;
+}
+static HRESULT WINAPI test_folder(HWND window, int folder, HANDLE token, DWORD flags, LPWSTR path) {
+    const wchar_t *redirect = folder_redirect(folder);
+    if (redirect && *redirect) {
+        wcscpy(path, redirect);
+        return S_OK;
+    }
+    return original_folder(window, folder, token, flags, path);
+}
+static HRESULT WINAPI test_subfolder(HWND window, int folder, HANDLE token, DWORD flags, LPCWSTR subfolder, LPWSTR path) {
+    const wchar_t *redirect = folder_redirect(folder);
+    if (!redirect || !*redirect) return original_subfolder(window, folder, token, flags, subfolder, path);
+    size_t length = wcslen(redirect) + (subfolder ? wcslen(subfolder) + 1 : 0);
+    if (length >= MAX_PATH) return HRESULT_FROM_WIN32(ERROR_FILENAME_EXCED_RANGE);
+    wcscpy(path, redirect);
+    if (subfolder && *subfolder) { wcscat(path, L"\\"); wcscat(path, subfolder); }
+    if (folder & CSIDL_FLAG_CREATE) {
+        int error = SHCreateDirectoryExW(NULL, path, NULL);
+        if (error != ERROR_SUCCESS && error != ERROR_ALREADY_EXISTS && error != ERROR_FILE_EXISTS)
+            return HRESULT_FROM_WIN32(error);
+    }
+    return S_OK;
+}
+static HRESULT WINAPI test_known_folder(const GUID *id, DWORD flags, HANDLE token, PWSTR *path) {
+    const wchar_t *redirect = IsEqualGUID(id, &FOLDERID_LocalAppData) ? test_local_appdata :
+        IsEqualGUID(id, &FOLDERID_Documents) ? test_documents : NULL;
+    if (redirect && *redirect) {
+        size_t bytes = (wcslen(redirect) + 1) * sizeof(wchar_t);
+        *path = CoTaskMemAlloc(bytes);
+        if (!*path) return E_OUTOFMEMORY;
+        memcpy(*path, redirect, bytes);
+        return S_OK;
+    }
+    return original_known_folder(id, flags, token, path);
+}
 
 static BOOL own_window(HWND window) {
     DWORD pid = 0;
@@ -69,6 +117,15 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
     HMODULE user = LoadLibraryW(L"user32.dll");
     HMODULE kernel = LoadLibraryW(L"kernel32.dll");
     HMODULE audio = LoadLibraryW(L"winmm.dll");
+    DWORD folder_length = GetEnvironmentVariableW(L"RML_BACKGROUND_LOCALAPPDATA", test_local_appdata, MAX_PATH);
+    DWORD documents_length = GetEnvironmentVariableW(L"RML_BACKGROUND_DOCUMENTS", test_documents, MAX_PATH);
+    if (folder_length >= MAX_PATH || documents_length >= MAX_PATH) ExitProcess(86);
+    if (folder_length || documents_length) {
+        HMODULE shell = LoadLibraryW(L"shell32.dll");
+        hook(shell, "SHGetFolderPathW", test_folder, (void **)&original_folder);
+        hook(shell, "SHGetFolderPathAndSubDirW", test_subfolder, (void **)&original_subfolder);
+        hook(shell, "SHGetKnownFolderPath", test_known_folder, (void **)&original_known_folder);
+    }
     hook(user, "CreateWindowExA", quiet_create_a, (void **)&original_create_a);
     hook(user, "CreateWindowExW", quiet_create, (void **)&original_create);
     hook(user, "ShowWindow", quiet_show, (void **)&original_show);

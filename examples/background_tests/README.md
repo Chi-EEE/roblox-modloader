@@ -9,12 +9,18 @@ activation APIs, prevents taskbar flashing, and suppresses console allocation an
 Win32 sound notifications. Child windows keep their normal styles so Qt can build
 its widget tree. Hooks apply inside the test process, on the normal display.
 
+For native Windows tests, `RML_BACKGROUND_LOCALAPPDATA` and
+`RML_BACKGROUND_DOCUMENTS` redirect the corresponding Windows shell folders to
+test-only directories. Studio and Qt use these APIs to locate application data
+and local plugins. The redirects apply only to the background process, and paths
+must fit within `MAX_PATH`.
+
 Build with a Windows C compiler and MinHook 1.3.4:
 
 ```sh
 x86_64-w64-mingw32-gcc -O2 -shared -o background_tests.dll background_tests.c \
   minhook/src/buffer.c minhook/src/hook.c minhook/src/trampoline.c \
-  minhook/src/hde/hde64.c -I minhook/include -luser32 -lwinmm
+  minhook/src/hde/hde64.c -I minhook/include -luser32 -lwinmm -lshell32 -lole32 -luuid
 ```
 
 Install at `RobloxModLoader/background_tests.dll` in the test-only Studio install.
@@ -24,7 +30,10 @@ mod lifecycle callbacks happen too late to reliably prevent startup focus change
 `smoke.c` checks that explicit show/activate calls leave its window hidden and the
 foreground window unchanged. It also checks console suppression and
 `WS_EX_NOACTIVATE`. Build it with the same compiler and pass the mod's Windows path
-as its only argument, with `RML_BACKGROUND_TESTS=1`.
+as its only argument, with `RML_BACKGROUND_TESTS=1`. Link the smoke executable
+with user32, shell32, ole32, and uuid. When the folder variables are set, it also
+checks both the legacy and known-folder shell APIs. The game's
+`bun run test:studio:setup` performs this build and check using MSVC on Windows.
 
 If any required hook cannot be installed, the test process exits with code 86.
 `RML_BACKGROUND_READY_FILE` can name a Windows file path to receive a `ready`
